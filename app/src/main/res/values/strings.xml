@@ -1,0 +1,43 @@
+<resources>
+    <string name="app_name">MeshConnect</string>
+    <string name="app_tagline">Offline Peer-to-Peer Mesh Communication</string>
+
+    <!-- Main Activity -->
+    <string name="dashboard_title">MeshConnect Dashboard</string>
+    <string name="dashboard_subtitle">Connect and chat with nearby devices without internet, cellular network, or central servers.</string>
+    <string name="btn_scan_devices">Scan Nearby Devices</string>
+    <string name="btn_scan_desc">Search for Bluetooth &amp; Wi-Fi Direct peers</string>
+    <string name="btn_chat_history">Chat History</string>
+    <string name="btn_chat_history_desc">View recent offline conversations &amp; paired nodes</string>
+    <string name="status_mesh_ready">Mesh Engine: Ready</string>
+    <string name="section_quick_actions">Quick Actions</string>
+    <string name="section_network_info">P2P Network Info</string>
+    <string name="my_node_id">My Node ID: %1$s</string>
+    <string name="bluetooth_status">Bluetooth Radio: Enabled</string>
+    <string name="wifi_p2p_status">Wi-Fi Direct: Standby</string>
+
+    <!-- Device List Activity -->
+    <string name="device_list_title">Discovered Peers</string>
+    <string name="scanning_peers">Scanning for nearby mesh nodes…</string>
+    <string name="stop_scan">Stop Scan</string>
+    <string name="rescan">Rescan</string>
+    <string name="no_devices_found">No nearby devices found yet</string>
+    <string name="no_devices_hint">Make sure Bluetooth or Wi-Fi Direct is turned on and discoverable on nearby peer devices.</string>
+    <string name="paired_devices">Paired Devices</string>
+    <string name="available_devices">Available Devices</string>
+    <string name="action_connect">Connect</string>
+    <string name="action_connecting">Connecting…</string>
+    <string name="action_connected">Connected</string>
+
+    <!-- Chat Activity -->
+    <string name="chat_title">P2P Chat</string>
+    <string name="chat_status_connected">Connected (Direct Mesh Link)</string>
+    <string name="chat_status_disconnected">Disconnected</string>
+    <string name="hint_type_message">Type an offline message…</string>
+    <string name="btn_send">Send</string>
+    <string name="secure_p2p_notice">End-to-End Direct Connection • No Internet Required</string>
+
+    <!-- Permissions -->
+    <string name="permission_rationale">MeshConnect requires Bluetooth and Location permissions to discover and establish direct peer-to-peer connections with nearby devices.</string>
+    <string name="grant_permissions">Grant Permissions</string>
+</resources>

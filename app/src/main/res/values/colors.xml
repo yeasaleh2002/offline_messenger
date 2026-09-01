@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand / Primary Palette -->
+    <color name="primary">#2563EB</color>
+    <color name="primary_variant">#1D4ED8</color>
+    <color name="primary_light">#DBEAFE</color>
+    <color name="primary_dark">#1E40AF</color>
+    
+    <!-- Secondary / Accent -->
+    <color name="secondary">#0D9488</color>
+    <color name="secondary_light">#CCFBF1</color>
+    <color name="secondary_dark">#0F766E</color>
+
+    <!-- Backgrounds & Surfaces -->
+    <color name="background">#F8FAFC</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_variant">#F1F5F9</color>
+    
+    <!-- Text Colors -->
+    <color name="text_primary">#0F172A</color>
+    <color name="text_secondary">#64748B</color>
+    <color name="text_muted">#94A3B8</color>
+    <color name="text_on_primary">#FFFFFF</color>
+
+    <!-- Status & Badges -->
+    <color name="status_online">#10B981</color>
+    <color name="status_connecting">#F59E0B</color>
+    <color name="status_offline">#94A3B8</color>
+
+    <!-- Chat Bubbles -->
+    <color name="chat_bubble_sent">#2563EB</color>
+    <color name="chat_bubble_received">#E2E8F0</color>
+    <color name="chat_text_sent">#FFFFFF</color>
+    <color name="chat_text_received">#0F172A</color>
+    <color name="chat_time_sent">#BFDBFE</color>
+    <color name="chat_time_received">#64748B</color>
+
+    <!-- Borders & Dividers -->
+    <color name="divider">#E2E8F0</color>
+    <color name="card_stroke">#CBD5E1</color>
+</resources>
