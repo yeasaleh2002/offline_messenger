@@ -3,31 +3,31 @@ plugins {
 }
 
 android {
-    namespace 'com.meshconnect.offlinechat'
-    compileSdk 34
+    namespace = 'com.meshconnect.offlinechat'
+    compileSdk = 34
 
     defaultConfig {
-        applicationId "com.meshconnect.offlinechat"
-        minSdk 26
-        targetSdk 34
-        versionCode 1
-        versionName "1.0.0"
+        applicationId = "com.meshconnect.offlinechat"
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0.0"
 
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled = false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
     buildFeatures {
-        viewBinding true
+        viewBinding = true
     }
 }
 
