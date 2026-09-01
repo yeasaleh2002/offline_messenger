@@ -57,7 +57,3 @@ google-services.json
 # OS-specific files
 .DS_Store
 Thumbs.db
-
-# Web simulator sandbox (for local browser preview only)
-/simulator/
-node_modules/
