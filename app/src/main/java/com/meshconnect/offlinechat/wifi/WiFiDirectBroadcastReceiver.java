@@ -8,10 +8,14 @@ import android.net.wifi.p2p.WifiP2pDevice;
 import android.net.wifi.p2p.WifiP2pDeviceList;
 import android.net.wifi.p2p.WifiP2pInfo;
 import android.net.wifi.p2p.WifiP2pManager;
+import android.os.Build;
+import android.os.Parcelable;
 import android.util.Log;
 
 /**
  * BroadcastReceiver to listen for Wi-Fi P2P (Wi-Fi Direct) system intents.
+ * Implements modern Android 13+ (API 33+) type-safe Parcelable extraction
+ * with legacy fallback and clean compilation.
  */
 public class WiFiDirectBroadcastReceiver extends BroadcastReceiver {
 
@@ -30,6 +34,7 @@ public class WiFiDirectBroadcastReceiver extends BroadcastReceiver {
     }
 
     @Override
+    @SuppressWarnings("deprecation")
     public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
         if (action == null) return;
@@ -64,7 +69,13 @@ public class WiFiDirectBroadcastReceiver extends BroadcastReceiver {
 
             case WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION:
                 // Connection state has changed
-                NetworkInfo networkInfo = intent.getParcelableExtra(WifiP2pManager.EXTRA_NETWORK_INFO);
+                NetworkInfo networkInfo;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    networkInfo = intent.getParcelableExtra(WifiP2pManager.EXTRA_NETWORK_INFO, NetworkInfo.class);
+                } else {
+                    networkInfo = intent.getParcelableExtra(WifiP2pManager.EXTRA_NETWORK_INFO);
+                }
+
                 Log.d(TAG, "WIFI_P2P_CONNECTION_CHANGED: isConnected=" + (networkInfo != null && networkInfo.isConnected()));
 
                 if (networkInfo != null && networkInfo.isConnected()) {
@@ -93,7 +104,13 @@ public class WiFiDirectBroadcastReceiver extends BroadcastReceiver {
 
             case WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION:
                 // This device's Wi-Fi Direct details changed
-                WifiP2pDevice device = intent.getParcelableExtra(WifiP2pManager.EXTRA_WIFI_P2P_DEVICE);
+                WifiP2pDevice device;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    device = intent.getParcelableExtra(WifiP2pManager.EXTRA_WIFI_P2P_DEVICE, WifiP2pDevice.class);
+                } else {
+                    device = intent.getParcelableExtra(WifiP2pManager.EXTRA_WIFI_P2P_DEVICE);
+                }
+
                 if (device != null) {
                     Log.d(TAG, "Local device changed: " + device.deviceName + " [" + device.deviceAddress + "]");
                     if (listener != null) {

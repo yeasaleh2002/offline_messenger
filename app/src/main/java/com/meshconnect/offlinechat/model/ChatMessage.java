@@ -146,6 +146,10 @@ public class ChatMessage implements Serializable {
         return status;
     }
 
+    public void setStatus(MessageStatus status) {
+        this.status = status;
+    }
+
     public MessageType getMessageType() {
         return messageType != null ? messageType : MessageType.TEXT;
     }
