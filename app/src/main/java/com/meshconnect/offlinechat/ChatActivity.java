@@ -1,5 +1,8 @@
 package com.meshconnect.offlinechat;
 
+import android.Manifest;
+import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.net.wifi.p2p.WifiP2pDevice;
@@ -12,6 +15,7 @@ import android.provider.OpenableColumns;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
+import android.webkit.MimeTypeMap;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.TextView;
@@ -20,15 +24,19 @@ import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.meshconnect.offlinechat.adapter.ChatAdapter;
+import com.meshconnect.offlinechat.audio.VoiceRecorderHelper;
 import com.meshconnect.offlinechat.db.ChatDatabaseHelper;
 import com.meshconnect.offlinechat.model.ChatMessage;
 import com.meshconnect.offlinechat.network.P2PSocketManager;
+import com.meshconnect.offlinechat.network.ServerThread;
 import com.meshconnect.offlinechat.wifi.WiFiDirectManager;
 
 import java.io.ByteArrayOutputStream;
@@ -38,8 +46,8 @@ import java.io.InputStream;
 import java.util.List;
 
 /**
- * Production-ready Activity for offline P2P messaging and file sharing
- * featuring lifecycle safety, connection drop detection, and real-time status indicators.
+ * Production-ready Activity for offline P2P messaging, file sharing,
+ * voice notes, and real-time offline audio/video calling.
  */
 public class ChatActivity extends AppCompatActivity
         implements P2PSocketManager.SocketEventListener, WiFiDirectManager.WiFiDirectListener {
@@ -50,15 +58,19 @@ public class ChatActivity extends AppCompatActivity
     private TextView tvPeerName;
     private TextView tvPeerStatus;
     private View viewConnectionIndicator;
+    private ImageButton btnAudioCall;
+    private ImageButton btnVideoCall;
     private RecyclerView recyclerViewChat;
     private ImageButton btnAttachFile;
     private EditText etMessageInput;
+    private FloatingActionButton btnRecordVoice;
     private FloatingActionButton btnSendMessage;
 
     private ChatAdapter chatAdapter;
     private ChatDatabaseHelper dbHelper;
     private P2PSocketManager socketManager;
     private WiFiDirectManager wiFiDirectManager;
+    private VoiceRecorderHelper voiceRecorder;
     private ActivityResultLauncher<String> filePickerLauncher;
 
     private String peerId;
@@ -130,10 +142,15 @@ public class ChatActivity extends AppCompatActivity
         tvPeerName = findViewById(R.id.tvPeerName);
         tvPeerStatus = findViewById(R.id.tvPeerStatus);
         viewConnectionIndicator = findViewById(R.id.viewConnectionIndicator);
+        btnAudioCall = findViewById(R.id.btnAudioCall);
+        btnVideoCall = findViewById(R.id.btnVideoCall);
         recyclerViewChat = findViewById(R.id.recyclerViewChat);
         btnAttachFile = findViewById(R.id.btnAttachFile);
         etMessageInput = findViewById(R.id.etMessageInput);
+        btnRecordVoice = findViewById(R.id.btnRecordVoice);
         btnSendMessage = findViewById(R.id.btnSendMessage);
+
+        voiceRecorder = new VoiceRecorderHelper(this);
 
         tvPeerName.setText(peerName);
         updateStatusConnected();
@@ -180,10 +197,46 @@ public class ChatActivity extends AppCompatActivity
 
     private void setupRecyclerView() {
         chatAdapter = new ChatAdapter();
+        chatAdapter.setOnFileClickListener(this::openFile);
         LinearLayoutManager layoutManager = new LinearLayoutManager(this);
         layoutManager.setStackFromEnd(true);
         recyclerViewChat.setLayoutManager(layoutManager);
         recyclerViewChat.setAdapter(chatAdapter);
+    }
+
+    private void openFile(ChatMessage message) {
+        if (message.getFilePath() == null) {
+            Toast.makeText(this, "File path is unavailable", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        File file = new File(message.getFilePath());
+        if (!file.exists()) {
+            Toast.makeText(this, "File not found on device storage", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        try {
+            Uri contentUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", file);
+            String mimeType = getContentResolver().getType(contentUri);
+            if (mimeType == null) {
+                String extension = MimeTypeMap.getFileExtensionFromUrl(file.getName());
+                if (extension != null) {
+                    mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.toLowerCase());
+                }
+            }
+            if (mimeType == null) {
+                mimeType = "*/*";
+            }
+
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(contentUri, mimeType);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(intent, "Open " + message.getFileName() + " with"));
+        } catch (Exception e) {
+            Log.e(TAG, "Error opening file via FileProvider", e);
+            Toast.makeText(this, "No app available to open this file", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void saveContactAndLoadMessages() {
@@ -246,6 +299,103 @@ public class ChatActivity extends AppCompatActivity
         btnAttachFile.setOnClickListener(v -> {
             filePickerLauncher.launch("*/*");
         });
+
+        btnRecordVoice.setOnClickListener(v -> handleVoiceRecordClick());
+
+        btnAudioCall.setOnClickListener(v -> startCall("AUDIO"));
+
+        btnVideoCall.setOnClickListener(v -> startCall("VIDEO"));
+    }
+
+    private void startCall(String type) {
+        if (peerIp == null || peerIp.isEmpty() || (isGroupOwner && "192.168.49.1".equals(peerIp))) {
+            Toast.makeText(this, "Cannot place call: waiting for peer connection.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        boolean hasAudio = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+        boolean hasCamera = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+
+        if (!hasAudio || ("VIDEO".equals(type) && !hasCamera)) {
+            ActivityCompat.requestPermissions(this, new String[]{
+                    Manifest.permission.RECORD_AUDIO,
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.MODIFY_AUDIO_SETTINGS
+            }, 101);
+            return;
+        }
+
+        Intent intent = new Intent(this, CallActivity.class);
+        intent.putExtra("EXTRA_PEER_IP", peerIp);
+        intent.putExtra("EXTRA_PEER_NAME", peerName);
+        intent.putExtra("EXTRA_CALL_TYPE", type);
+        intent.putExtra("EXTRA_IS_INCOMING", false);
+        startActivity(intent);
+    }
+
+    private void handleVoiceRecordClick() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, 102);
+            return;
+        }
+
+        if (voiceRecorder.isRecording()) {
+            File recordedVoice = voiceRecorder.stopRecording();
+            btnRecordVoice.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.secondary_dark));
+
+            if (recordedVoice != null && recordedVoice.exists()) {
+                sendVoiceMessage(recordedVoice);
+            } else {
+                Toast.makeText(this, "Voice note was too short.", Toast.LENGTH_SHORT).show();
+            }
+        } else {
+            try {
+                voiceRecorder.startRecording();
+                btnRecordVoice.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.status_offline));
+                Toast.makeText(this, "Recording voice note... Tap again to send.", Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {
+                Log.e(TAG, "Failed starting voice recording", e);
+                Toast.makeText(this, "Error accessing microphone: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private void sendVoiceMessage(File voiceFile) {
+        String fileName = voiceFile.getName();
+        long fileSize = voiceFile.length();
+
+        ChatMessage voiceMessage = new ChatMessage(
+                "my-node-id",
+                "Me",
+                peerAddress,
+                "[Voice Note]",
+                ChatMessage.MessageType.AUDIO,
+                voiceFile.getAbsolutePath(),
+                fileName,
+                fileSize,
+                true
+        );
+        voiceMessage.setStatus(ChatMessage.MessageStatus.SENDING);
+
+        long rowId = dbHelper.insertMessage(voiceMessage, peerAddress);
+        voiceMessage.setDatabaseId(rowId);
+
+        chatAdapter.addMessage(voiceMessage);
+        int pos = chatAdapter.getItemCount() - 1;
+        scrollToBottom();
+
+        boolean canSend = peerIp != null && !peerIp.isEmpty() && (!isGroupOwner || !"192.168.49.1".equals(peerIp));
+        if (canSend) {
+            socketManager.sendFile(peerIp, fileName, voiceFile);
+            dbHelper.updateMessageStatus(rowId, ChatMessage.MessageStatus.DELIVERED.name());
+            voiceMessage.setStatus(ChatMessage.MessageStatus.DELIVERED);
+            chatAdapter.notifyItemChanged(pos);
+        } else {
+            dbHelper.updateMessageStatus(rowId, ChatMessage.MessageStatus.DELIVERED.name());
+            voiceMessage.setStatus(ChatMessage.MessageStatus.DELIVERED);
+            chatAdapter.notifyItemChanged(pos);
+            Toast.makeText(this, "Voice note saved locally.", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void sendMessage() {
@@ -451,16 +601,22 @@ public class ChatActivity extends AppCompatActivity
             }
         }
 
-        ChatMessage.MessageType type = (fileName != null && (fileName.endsWith(".jpg") || fileName.endsWith(".png") || fileName.endsWith(".jpeg")))
-                ? ChatMessage.MessageType.IMAGE
-                : ChatMessage.MessageType.FILE;
+        ChatMessage.MessageType type;
+        if (fileName != null && (fileName.endsWith(".m4a") || fileName.endsWith(".aac") || fileName.endsWith(".mp3") || fileName.endsWith(".wav") || fileName.startsWith("VOICE_"))) {
+            type = ChatMessage.MessageType.AUDIO;
+        } else if (fileName != null && (fileName.endsWith(".jpg") || fileName.endsWith(".png") || fileName.endsWith(".jpeg"))) {
+            type = ChatMessage.MessageType.IMAGE;
+        } else {
+            type = ChatMessage.MessageType.FILE;
+        }
 
         // 1. Construct received file message
+        String displayBody = (type == ChatMessage.MessageType.AUDIO) ? "[Voice Note]" : "[Received File: " + fileName + "]";
         ChatMessage receivedFileMessage = new ChatMessage(
                 peerId != null ? peerId : senderIp,
                 peerName,
                 "my-node-id",
-                "[Received File: " + fileName + "]",
+                displayBody,
                 type,
                 savedFile.getAbsolutePath(),
                 fileName,
@@ -477,7 +633,20 @@ public class ChatActivity extends AppCompatActivity
         chatAdapter.addMessage(receivedFileMessage);
         scrollToBottom();
 
-        Toast.makeText(this, "Received file saved: " + fileName, Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, (type == ChatMessage.MessageType.AUDIO ? "Voice note received" : "Received file saved: " + fileName), Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    public void onCallSignalingReceived(byte callSignal, String callerName, String callType, String senderIp) {
+        if (callSignal == ServerThread.TYPE_CALL_INVITE) {
+            Log.d(TAG, "Incoming call request received from " + callerName + " (" + senderIp + "), type: " + callType);
+            Intent intent = new Intent(this, CallActivity.class);
+            intent.putExtra("EXTRA_PEER_IP", senderIp != null ? senderIp : peerIp);
+            intent.putExtra("EXTRA_PEER_NAME", callerName != null && !callerName.isEmpty() ? callerName : peerName);
+            intent.putExtra("EXTRA_CALL_TYPE", callType != null ? callType : "AUDIO");
+            intent.putExtra("EXTRA_IS_INCOMING", true);
+            startActivity(intent);
+        }
     }
 
     @Override
@@ -593,6 +762,10 @@ public class ChatActivity extends AppCompatActivity
     protected void onDestroy() {
         super.onDestroy();
         messageHandler.removeCallbacksAndMessages(null);
+        ChatAdapter.releasePlayer();
+        if (voiceRecorder != null) {
+            voiceRecorder.cancelRecording();
+        }
         if (socketManager != null) {
             socketManager.stopServer();
         }

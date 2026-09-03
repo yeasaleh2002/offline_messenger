@@ -21,7 +21,8 @@ public class ChatMessage implements Serializable {
     public enum MessageType {
         TEXT,
         IMAGE,
-        FILE
+        FILE,
+        AUDIO
     }
 
     private long databaseId;

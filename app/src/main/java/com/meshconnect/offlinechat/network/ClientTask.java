@@ -84,6 +84,87 @@ public class ClientTask {
     }
 
     /**
+     * Transmits a call invitation packet to the remote peer.
+     */
+    public static void sendCallInvite(String targetIp, int targetPort, String callerName, boolean isVideo, OnSendListener listener) {
+        if (targetIp == null || targetIp.trim().isEmpty()) {
+            if (listener != null) listener.onFailure("Invalid target IP address.");
+            return;
+        }
+
+        executor.execute(() -> {
+            Socket socket = null;
+            DataOutputStream dos = null;
+            try {
+                Log.d(TAG, "Sending call invite (" + (isVideo ? "VIDEO" : "AUDIO") + ") to " + targetIp + ":" + targetPort);
+                socket = new Socket();
+                socket.bind(null);
+                socket.connect(new InetSocketAddress(targetIp.trim(), targetPort), SOCKET_TIMEOUT_MS);
+
+                dos = new DataOutputStream(socket.getOutputStream());
+                byte[] nameBytes = (callerName != null ? callerName : "Caller").getBytes(StandardCharsets.UTF_8);
+
+                dos.writeByte(ServerThread.TYPE_CALL_INVITE);
+                dos.writeShort(nameBytes.length);
+                dos.write(nameBytes);
+                dos.writeByte(isVideo ? 1 : 0);
+                dos.flush();
+
+                mainHandler.post(() -> {
+                    if (listener != null) listener.onSuccess();
+                });
+
+            } catch (IOException e) {
+                Log.e(TAG, "Error sending call invite to " + targetIp + ":" + targetPort, e);
+                mainHandler.post(() -> {
+                    if (listener != null) listener.onFailure("Call request failed: " + e.getMessage());
+                });
+            } finally {
+                closeQuietly(dos);
+                closeQuietly(socket);
+            }
+        });
+    }
+
+    /**
+     * Sends a simple call signal byte (ACCEPT, DECLINE, END) to the remote peer.
+     */
+    public static void sendCallSignal(String targetIp, int targetPort, byte signal, OnSendListener listener) {
+        if (targetIp == null || targetIp.trim().isEmpty()) {
+            if (listener != null) listener.onFailure("Invalid target IP address.");
+            return;
+        }
+
+        executor.execute(() -> {
+            Socket socket = null;
+            DataOutputStream dos = null;
+            try {
+                Log.d(TAG, "Sending call signal " + signal + " to " + targetIp + ":" + targetPort);
+                socket = new Socket();
+                socket.bind(null);
+                socket.connect(new InetSocketAddress(targetIp.trim(), targetPort), SOCKET_TIMEOUT_MS);
+
+                dos = new DataOutputStream(socket.getOutputStream());
+                dos.writeByte(signal);
+                dos.flush();
+
+                mainHandler.post(() -> {
+                    if (listener != null) listener.onSuccess();
+                });
+
+            } catch (IOException e) {
+                Log.e(TAG, "Error sending call signal to " + targetIp + ":" + targetPort, e);
+                mainHandler.post(() -> {
+                    if (listener != null) listener.onFailure("Call signal failed: " + e.getMessage());
+                });
+            } finally {
+                closeQuietly(dos);
+                closeQuietly(socket);
+            }
+        });
+    }
+
+    /**
      * Transmits a UTF-8 text message payload to the target peer.
      */
     public static void sendText(String targetIp, int targetPort, String messageText, OnSendListener listener) {

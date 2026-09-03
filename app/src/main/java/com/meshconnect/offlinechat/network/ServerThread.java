@@ -25,12 +25,17 @@ public class ServerThread extends Thread {
     public static final byte TYPE_TEXT = 0x01;
     public static final byte TYPE_FILE = 0x02;
     public static final byte TYPE_HANDSHAKE = 0x03;
+    public static final byte TYPE_CALL_INVITE = 0x05;
     public static final byte TYPE_ACK = 0x06;
+    public static final byte TYPE_CALL_ACCEPT = 0x07;
+    public static final byte TYPE_CALL_DECLINE = 0x08;
+    public static final byte TYPE_CALL_END = 0x09;
 
     public interface OnMessageReceivedListener {
         void onHandshakeReceived(String peerName, String senderIp);
         void onMessageReceived(String messageText, String senderIp);
         void onFileReceived(File savedFile, String fileName, long fileSize, String senderIp);
+        void onCallSignalingReceived(byte callSignal, String callerName, String callType, String senderIp);
         void onServerError(String errorMessage);
     }
 
@@ -86,6 +91,31 @@ public class ServerThread extends Thread {
                             }
                         });
 
+                    } else if (packetType == TYPE_CALL_INVITE) {
+                        // Incoming Call Invite
+                        short nameLen = dis.readShort();
+                        byte[] nameBytes = new byte[nameLen];
+                        dis.readFully(nameBytes);
+                        String callerName = new String(nameBytes, StandardCharsets.UTF_8);
+                        byte callMode = dis.readByte(); // 0 = AUDIO, 1 = VIDEO
+                        String callType = callMode == 1 ? "VIDEO" : "AUDIO";
+
+                        Log.d(TAG, "Incoming " + callType + " call from " + callerName + " (" + clientIp + ")");
+                        mainHandler.post(() -> {
+                            if (listener != null) {
+                                listener.onCallSignalingReceived(TYPE_CALL_INVITE, callerName, callType, clientIp);
+                            }
+                        });
+
+                    } else if (packetType == TYPE_CALL_ACCEPT || packetType == TYPE_CALL_DECLINE || packetType == TYPE_CALL_END) {
+                        Log.d(TAG, "Call signaling packet received: " + packetType + " from " + clientIp);
+                        final byte signal = packetType;
+                        mainHandler.post(() -> {
+                            if (listener != null) {
+                                listener.onCallSignalingReceived(signal, "", "", clientIp);
+                            }
+                        });
+
                     } else if (packetType == TYPE_TEXT) {
                         // 1. Read Text Packet
                         int textLength = dis.readInt();
@@ -116,8 +146,13 @@ public class ServerThread extends Thread {
 
                         Log.d(TAG, "Receiving file: " + originalFileName + " (" + fileSize + " bytes) from " + clientIp);
 
-                        // Save incoming byte stream to app's internal storage
-                        File storageDir = new File(context.getFilesDir(), "received_files");
+                        // Save incoming file to accessible external files or internal storage
+                        File storageDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS);
+                        if (storageDir == null) {
+                            storageDir = new File(context.getFilesDir(), "received_files");
+                        } else {
+                            storageDir = new File(storageDir, "MeshConnect");
+                        }
                         if (!storageDir.exists()) {
                             storageDir.mkdirs();
                         }

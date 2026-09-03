@@ -72,6 +72,27 @@
                 </LinearLayout>
             </LinearLayout>
 
+            <!-- Offline Audio Call Button -->
+            <ImageButton
+                android:id="@+id/btnAudioCall"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Audio Call"
+                android:src="@drawable/ic_call_24"
+                app:tint="@color/text_primary" />
+
+            <!-- Offline Video Call Button -->
+            <ImageButton
+                android:id="@+id/btnVideoCall"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="4dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Video Call"
+                android:src="@drawable/ic_videocam_24"
+                app:tint="@color/text_primary" />
+
         </LinearLayout>
 
         <!-- P2P Info Strip -->
@@ -145,6 +166,20 @@
                 android:textColorHint="@color/text_muted"
                 android:textSize="14sp" />
 
+            <!-- Voice Message Record Button -->
+            <com.google.android.material.floatingactionbutton.FloatingActionButton
+                android:id="@+id/btnRecordVoice"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:contentDescription="Record Voice Message"
+                android:src="@drawable/ic_mic_24"
+                app:backgroundTint="@color/secondary_dark"
+                app:elevation="2dp"
+                app:fabCustomSize="44dp"
+                app:tint="#FFFFFF" />
+
+            <!-- Send Text Button -->
             <com.google.android.material.floatingactionbutton.FloatingActionButton
                 android:id="@+id/btnSendMessage"
                 android:layout_width="wrap_content"

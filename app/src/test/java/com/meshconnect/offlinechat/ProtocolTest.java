@@ -110,4 +110,40 @@ public class ProtocolTest {
     public void testAckByteConstant() {
         assertEquals(0x06, ServerThread.TYPE_ACK);
     }
+
+    @Test
+    public void testCallSignalingPacketProtocol() throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        DataOutputStream dos = new DataOutputStream(baos);
+
+        String callerName = "Alice";
+        byte[] nameBytes = callerName.getBytes(StandardCharsets.UTF_8);
+        boolean isVideo = true;
+
+        // Invite format: TYPE_CALL_INVITE (0x05) + Short length + Caller Name + Byte callMode (1=Video, 0=Audio)
+        dos.writeByte(ServerThread.TYPE_CALL_INVITE);
+        dos.writeShort(nameBytes.length);
+        dos.write(nameBytes);
+        dos.writeByte(isVideo ? 1 : 0);
+        dos.flush();
+
+        // Read and verify
+        DataInputStream dis = new DataInputStream(new ByteArrayInputStream(baos.toByteArray()));
+        byte packetType = dis.readByte();
+        assertEquals(ServerThread.TYPE_CALL_INVITE, packetType);
+
+        short nameLen = dis.readShort();
+        byte[] readBytes = new byte[nameLen];
+        dis.readFully(readBytes);
+        String decodedCaller = new String(readBytes, StandardCharsets.UTF_8);
+        assertEquals(callerName, decodedCaller);
+
+        byte callMode = dis.readByte();
+        assertEquals(1, callMode);
+
+        // Verify call response signal constants
+        assertEquals(0x07, ServerThread.TYPE_CALL_ACCEPT);
+        assertEquals(0x08, ServerThread.TYPE_CALL_DECLINE);
+        assertEquals(0x09, ServerThread.TYPE_CALL_END);
+    }
 }

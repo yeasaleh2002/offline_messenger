@@ -61,4 +61,17 @@ public class ChatMessageTest {
         assertEquals(-50, device.getRssi());
         assertTrue(device.isPaired());
     }
+
+    @Test
+    public void testAudioMessageCreation() {
+        ChatMessage audioMsg = new ChatMessage(
+                "sender-1", "Alice", "recipient-1", "[Voice Note]",
+                ChatMessage.MessageType.AUDIO, "/path/voice_note.m4a", "voice_note.m4a", 45 * 1024, true
+        );
+
+        assertEquals(ChatMessage.MessageType.AUDIO, audioMsg.getMessageType());
+        assertEquals("45.0 KB", audioMsg.getFormattedFileSize());
+        assertEquals("[Voice Note]", audioMsg.getMessageText());
+        assertEquals("voice_note.m4a", audioMsg.getFileName());
+    }
 }

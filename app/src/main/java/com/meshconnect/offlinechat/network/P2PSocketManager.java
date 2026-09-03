@@ -18,6 +18,7 @@ public class P2PSocketManager {
         void onHandshakeReceived(String peerName, String senderIp);
         void onMessageReceived(String messageText, String senderIp);
         void onFileReceived(File savedFile, String fileName, long fileSize, String senderIp);
+        void onCallSignalingReceived(byte callSignal, String callerName, String callType, String senderIp);
         void onMessageSent(String messageText);
         void onFileSent(String fileName);
         void onNetworkError(String errorMessage);
@@ -70,6 +71,14 @@ public class P2PSocketManager {
             }
 
             @Override
+            public void onCallSignalingReceived(byte callSignal, String callerName, String callType, String senderIp) {
+                Log.d(TAG, "P2PSocketManager received call signal " + callSignal + " from " + senderIp);
+                if (eventListener != null) {
+                    eventListener.onCallSignalingReceived(callSignal, callerName, callType, senderIp);
+                }
+            }
+
+            @Override
             public void onServerError(String errorMessage) {
                 Log.e(TAG, "P2PSocketManager server error: " + errorMessage);
                 if (eventListener != null) {
@@ -80,6 +89,44 @@ public class P2PSocketManager {
 
         serverThread.start();
         Log.d(TAG, "P2P ServerThread started on port " + port);
+    }
+
+    /**
+     * Sends a call invite to a peer IP.
+     */
+    public void sendCallInvite(String targetIp, String callerName, boolean isVideo) {
+        ClientTask.sendCallInvite(targetIp, this.port, callerName, isVideo, new ClientTask.OnSendListener() {
+            @Override
+            public void onSuccess() {
+                Log.d(TAG, "Call invite dispatched to " + targetIp);
+            }
+
+            @Override
+            public void onFailure(String errorMessage) {
+                if (eventListener != null) {
+                    eventListener.onNetworkError("Call invite failed: " + errorMessage);
+                }
+            }
+        });
+    }
+
+    /**
+     * Sends a call signaling byte (ACCEPT, DECLINE, END) to a peer IP.
+     */
+    public void sendCallSignal(String targetIp, byte signal) {
+        ClientTask.sendCallSignal(targetIp, this.port, signal, new ClientTask.OnSendListener() {
+            @Override
+            public void onSuccess() {
+                Log.d(TAG, "Call signal " + signal + " sent to " + targetIp);
+            }
+
+            @Override
+            public void onFailure(String errorMessage) {
+                if (eventListener != null) {
+                    eventListener.onNetworkError("Call signal error: " + errorMessage);
+                }
+            }
+        });
     }
 
     /**
