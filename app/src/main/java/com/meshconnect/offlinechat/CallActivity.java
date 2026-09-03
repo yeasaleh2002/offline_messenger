@@ -1,5 +1,7 @@
 package com.meshconnect.offlinechat;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.os.Handler;
@@ -15,6 +17,7 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.cardview.widget.CardView;
+import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
@@ -167,6 +170,15 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
         layoutControls.setVisibility(View.VISIBLE);
         tvCallStatus.setText("Calling (Direct Offline Link)...");
 
+        // Check permissions if starting video call
+        if ("VIDEO".equals(callType)) {
+            boolean hasCamera = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+            boolean hasAudio = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+            if (!hasCamera || !hasAudio) {
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO}, 203);
+            }
+        }
+
         // Send invite packet to peer over port 8888
         if (peerIp != null) {
             socketManager.sendCallInvite(peerIp, android.os.Build.MODEL, "VIDEO".equals(callType));
@@ -183,6 +195,21 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
     }
 
     private void acceptCall() {
+        if ("VIDEO".equals(callType)) {
+            boolean hasCamera = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+            boolean hasAudio = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+            if (!hasCamera || !hasAudio) {
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO}, 201);
+                return;
+            }
+        } else {
+            boolean hasAudio = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+            if (!hasAudio) {
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, 202);
+                return;
+            }
+        }
+
         layoutIncomingActions.setVisibility(View.GONE);
         layoutControls.setVisibility(View.VISIBLE);
         timerHandler.removeCallbacks(ringTimeoutRunnable);
@@ -191,6 +218,28 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
             socketManager.sendCallSignal(peerIp, ServerThread.TYPE_CALL_ACCEPT);
         }
         startActiveCall();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        boolean allGranted = grantResults.length > 0;
+        for (int res : grantResults) {
+            if (res != PackageManager.PERMISSION_GRANTED) {
+                allGranted = false;
+                break;
+            }
+        }
+        if (allGranted) {
+            if (requestCode == 201 || requestCode == 202) {
+                acceptCall();
+            }
+        } else {
+            Toast.makeText(this, "Camera/Microphone permission required for call.", Toast.LENGTH_SHORT).show();
+            if (requestCode == 201 || requestCode == 202) {
+                declineCall();
+            }
+        }
     }
 
     private void declineCall() {
@@ -211,10 +260,6 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
         callStartTime = SystemClock.elapsedRealtime();
         timerHandler.post(timerRunnable);
 
-        if ("VIDEO".equals(callType)) {
-            layoutAudioAvatar.setVisibility(View.GONE);
-        }
-
         // 1. Launch VoIP Audio Engine over UDP (port 8889)
         audioEngine = new AudioCallEngine(this, peerIp);
         audioEngine.startCall();
@@ -222,8 +267,19 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
 
         // 2. Launch Video Engine if Video call (port 8890)
         if ("VIDEO".equals(callType)) {
+            cardLocalPreview.setVisibility(View.VISIBLE);
+            btnSwitchCam.setVisibility(View.VISIBLE);
+            ivRemoteVideo.setVisibility(View.VISIBLE);
+            layoutAudioAvatar.setVisibility(View.GONE);
+
             videoEngine = new VideoCallEngine(this, peerIp, !isIncoming, bitmap -> {
                 if (ivRemoteVideo != null && bitmap != null) {
+                    if (ivRemoteVideo.getVisibility() != View.VISIBLE) {
+                        ivRemoteVideo.setVisibility(View.VISIBLE);
+                    }
+                    if (layoutAudioAvatar.getVisibility() != View.GONE) {
+                        layoutAudioAvatar.setVisibility(View.GONE);
+                    }
                     ivRemoteVideo.setImageBitmap(bitmap);
                 }
             });
