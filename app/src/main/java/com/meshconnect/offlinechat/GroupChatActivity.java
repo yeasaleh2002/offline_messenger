@@ -138,7 +138,8 @@ public class GroupChatActivity extends AppCompatActivity
     }
 
     private void startP2PServer() {
-        socketManager = new P2PSocketManager(this, this);
+        socketManager = P2PSocketManager.getInstance(this);
+        socketManager.registerListener(this);
         socketManager.startServer();
     }
 
@@ -180,9 +181,9 @@ public class GroupChatActivity extends AppCompatActivity
         etMessageInput.setText("");
         scrollToBottom();
 
-        // Broadcast to default P2P gateway IP (192.168.49.1) or local clients
+        // Broadcast to all group peers via mesh fan-out or to Group Owner gateway
         if (socketManager != null) {
-            socketManager.sendGroupMessage("192.168.49.1", groupId, groupName, android.os.Build.MODEL, text);
+            socketManager.broadcastGroupMessage(groupId, groupName, android.os.Build.MODEL, text);
         }
     }
 
@@ -215,7 +216,7 @@ public class GroupChatActivity extends AppCompatActivity
                 scrollToBottom();
 
                 if (socketManager != null) {
-                    socketManager.sendFile("192.168.49.1", fileName, recordedVoice);
+                    socketManager.broadcastGroupFile(fileName, recordedVoice);
                 }
             }
         } else {
@@ -270,7 +271,7 @@ public class GroupChatActivity extends AppCompatActivity
             scrollToBottom();
 
             if (socketManager != null) {
-                socketManager.sendFile("192.168.49.1", fileName, localFile);
+                socketManager.broadcastGroupFile(fileName, localFile);
             }
         } catch (Exception e) {
             Log.e(TAG, "Group file attach error", e);
@@ -286,7 +287,9 @@ public class GroupChatActivity extends AppCompatActivity
             Uri contentUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", file);
             String mime = getContentResolver().getType(contentUri);
             if (mime == null) {
-                String ext = MimeTypeMap.getFileExtensionFromUrl(file.getName());
+                String name = file.getName();
+                int dotIdx = name.lastIndexOf('.');
+                String ext = (dotIdx != -1 && dotIdx < name.length() - 1) ? name.substring(dotIdx + 1) : null;
                 if (ext != null) mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.toLowerCase());
             }
             if (mime == null) mime = "*/*";
@@ -297,6 +300,14 @@ public class GroupChatActivity extends AppCompatActivity
             startActivity(Intent.createChooser(intent, "Open file with"));
         } catch (Exception e) {
             Log.e(TAG, "Error opening group file", e);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 103 && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this, "Microphone enabled. Tap mic to record voice note.", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -343,7 +354,7 @@ public class GroupChatActivity extends AppCompatActivity
             voiceRecorder.cancelRecording();
         }
         if (socketManager != null) {
-            socketManager.stopServer();
+            socketManager.unregisterListener(this);
         }
     }
 }

@@ -5,9 +5,9 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.util.Log;
 import android.view.SurfaceView;
 import android.view.View;
-import android.widget.Chronometer;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -15,11 +15,11 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.cardview.widget.CardView;
+import androidx.core.content.ContextCompat;
 
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.meshconnect.offlinechat.call.AudioCallEngine;
 import com.meshconnect.offlinechat.call.VideoCallEngine;
-import com.meshconnect.offlinechat.network.ClientTask;
 import com.meshconnect.offlinechat.network.P2PSocketManager;
 import com.meshconnect.offlinechat.network.ServerThread;
 
@@ -27,8 +27,12 @@ import java.io.File;
 
 /**
  * Activity for real-time offline P2P Audio and Video calling over direct Wi-Fi Direct radio links.
+ * Handles call signaling (INVITE, ACCEPT, DECLINE, END) with zero server infrastructure.
  */
 public class CallActivity extends AppCompatActivity implements P2PSocketManager.SocketEventListener {
+
+    private static final String TAG = "CallActivity";
+    private static final long RING_TIMEOUT_MS = 30000; // 30s timeout
 
     private ImageView ivRemoteVideo;
     private LinearLayout layoutAudioAvatar;
@@ -62,6 +66,7 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
 
     private final Handler timerHandler = new Handler(Looper.getMainLooper());
     private long callStartTime = 0;
+
     private final Runnable timerRunnable = new Runnable() {
         @Override
         public void run() {
@@ -71,6 +76,17 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
                 long seconds = elapsed % 60;
                 tvCallDuration.setText(String.format("%02d:%02d", minutes, seconds));
                 timerHandler.postDelayed(this, 1000);
+            }
+        }
+    };
+
+    private final Runnable ringTimeoutRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!isCallActive && !isFinishing()) {
+                tvCallStatus.setText("No Answer");
+                Toast.makeText(CallActivity.this, "Peer did not answer.", Toast.LENGTH_SHORT).show();
+                endCall(true);
             }
         }
     };
@@ -141,7 +157,8 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
     }
 
     private void setupSocketListener() {
-        socketManager = new P2PSocketManager(this, this);
+        socketManager = P2PSocketManager.getInstance(this);
+        socketManager.registerListener(this);
         socketManager.startServer();
     }
 
@@ -150,15 +167,13 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
         layoutControls.setVisibility(View.VISIBLE);
         tvCallStatus.setText("Calling (Direct Offline Link)...");
 
-        // Send invite packet to peer
-        socketManager.sendCallInvite(peerIp, android.os.Build.MODEL, "VIDEO".equals(callType));
+        // Send invite packet to peer over port 8888
+        if (peerIp != null) {
+            socketManager.sendCallInvite(peerIp, android.os.Build.MODEL, "VIDEO".equals(callType));
+        }
 
-        // Auto-connect after brief ring
-        timerHandler.postDelayed(() -> {
-            if (!isFinishing() && !isCallActive) {
-                startActiveCall();
-            }
-        }, 1200);
+        // Set 30s ringing timeout
+        timerHandler.postDelayed(ringTimeoutRunnable, RING_TIMEOUT_MS);
     }
 
     private void setupIncomingCallUi() {
@@ -170,6 +185,7 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
     private void acceptCall() {
         layoutIncomingActions.setVisibility(View.GONE);
         layoutControls.setVisibility(View.VISIBLE);
+        timerHandler.removeCallbacks(ringTimeoutRunnable);
 
         if (peerIp != null) {
             socketManager.sendCallSignal(peerIp, ServerThread.TYPE_CALL_ACCEPT);
@@ -178,6 +194,7 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
     }
 
     private void declineCall() {
+        timerHandler.removeCallbacks(ringTimeoutRunnable);
         if (peerIp != null) {
             socketManager.sendCallSignal(peerIp, ServerThread.TYPE_CALL_DECLINE);
         }
@@ -185,6 +202,9 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
     }
 
     private void startActiveCall() {
+        if (isCallActive) return;
+        timerHandler.removeCallbacks(ringTimeoutRunnable);
+
         isCallActive = true;
         tvCallStatus.setText("Connected");
         tvCallDuration.setVisibility(View.VISIBLE);
@@ -195,12 +215,12 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
             layoutAudioAvatar.setVisibility(View.GONE);
         }
 
-        // 1. Launch VoIP Audio Engine over UDP
+        // 1. Launch VoIP Audio Engine over UDP (port 8889)
         audioEngine = new AudioCallEngine(this, peerIp);
         audioEngine.startCall();
         audioEngine.setSpeakerphoneOn(isSpeakerOn);
 
-        // 2. Launch Video Engine if Video call
+        // 2. Launch Video Engine if Video call (port 8890)
         if ("VIDEO".equals(callType)) {
             videoEngine = new VideoCallEngine(this, peerIp, !isIncoming, bitmap -> {
                 if (ivRemoteVideo != null && bitmap != null) {
@@ -217,7 +237,7 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
         if (audioEngine != null) {
             audioEngine.setMuted(isMuted);
         }
-        btnMuteMic.setBackgroundTintList(getColorStateList(isMuted ? R.color.status_offline : R.color.secondary_dark));
+        btnMuteMic.setBackgroundTintList(ContextCompat.getColorStateList(this, isMuted ? R.color.status_offline : R.color.secondary_dark));
         Toast.makeText(this, isMuted ? "Microphone muted" : "Microphone unmuted", Toast.LENGTH_SHORT).show();
     }
 
@@ -226,16 +246,18 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
         if (audioEngine != null) {
             audioEngine.setSpeakerphoneOn(isSpeakerOn);
         }
-        btnSpeaker.setBackgroundTintList(getColorStateList(isSpeakerOn ? R.color.secondary_dark : R.color.status_offline));
+        btnSpeaker.setBackgroundTintList(ContextCompat.getColorStateList(this, isSpeakerOn ? R.color.secondary_dark : R.color.status_offline));
     }
 
     private void endCall(boolean notifyPeer) {
-        if (notifyPeer && peerIp != null) {
+        timerHandler.removeCallbacks(ringTimeoutRunnable);
+        timerHandler.removeCallbacks(timerRunnable);
+
+        if (notifyPeer && peerIp != null && socketManager != null) {
             socketManager.sendCallSignal(peerIp, ServerThread.TYPE_CALL_END);
         }
 
         isCallActive = false;
-        timerHandler.removeCallbacks(timerRunnable);
 
         if (audioEngine != null) {
             audioEngine.stopCall();
@@ -257,8 +279,10 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
 
     @Override
     public void onCallSignalingReceived(byte callSignal, String callerName, String callType, String senderIp) {
+        Log.d(TAG, "Call signaling received: " + callSignal + " from " + senderIp);
         if (callSignal == ServerThread.TYPE_CALL_ACCEPT) {
             if (!isCallActive) {
+                Log.d(TAG, "Call accepted by peer -> starting engines.");
                 startActiveCall();
             }
         } else if (callSignal == ServerThread.TYPE_CALL_DECLINE) {
@@ -283,7 +307,7 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
         super.onDestroy();
         endCall(false);
         if (socketManager != null) {
-            socketManager.stopServer();
+            socketManager.unregisterListener(this);
         }
     }
 }

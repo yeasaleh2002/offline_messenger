@@ -220,7 +220,9 @@ public class ChatActivity extends AppCompatActivity
             Uri contentUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", file);
             String mimeType = getContentResolver().getType(contentUri);
             if (mimeType == null) {
-                String extension = MimeTypeMap.getFileExtensionFromUrl(file.getName());
+                String name = file.getName();
+                int dotIdx = name.lastIndexOf('.');
+                String extension = (dotIdx != -1 && dotIdx < name.length() - 1) ? name.substring(dotIdx + 1) : null;
                 if (extension != null) {
                     mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.toLowerCase());
                 }
@@ -265,8 +267,9 @@ public class ChatActivity extends AppCompatActivity
     }
 
     private void initSocketServer() {
-        // Start TCP ServerSocket on background thread listening for peer transmissions
-        socketManager = new P2PSocketManager(this, this);
+        // Start TCP ServerSocket via shared singleton listening for peer transmissions
+        socketManager = P2PSocketManager.getInstance(this);
+        socketManager.registerListener(this);
         socketManager.startServer();
 
         // If this device is a Client (not Group Owner) and already has the Group Owner IP,
@@ -331,6 +334,25 @@ public class ChatActivity extends AppCompatActivity
         intent.putExtra("EXTRA_CALL_TYPE", type);
         intent.putExtra("EXTRA_IS_INCOMING", false);
         startActivity(intent);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        boolean allGranted = grantResults.length > 0;
+        for (int res : grantResults) {
+            if (res != PackageManager.PERMISSION_GRANTED) {
+                allGranted = false;
+                break;
+            }
+        }
+        if (allGranted) {
+            if (requestCode == 101) {
+                Toast.makeText(this, "Permissions granted. Tap call to start.", Toast.LENGTH_SHORT).show();
+            } else if (requestCode == 102) {
+                Toast.makeText(this, "Microphone enabled. Tap mic to record voice note.", Toast.LENGTH_SHORT).show();
+            }
+        }
     }
 
     private void handleVoiceRecordClick() {
@@ -553,6 +575,9 @@ public class ChatActivity extends AppCompatActivity
         if (senderIp != null && !senderIp.isEmpty() && !senderIp.equals("127.0.0.1")) {
             this.peerIp = senderIp;
             this.peerName = peerName;
+            if (socketManager != null) {
+                socketManager.registerPeerIp(senderIp);
+            }
             tvPeerName.setText(peerName);
             updateStatusConnected();
             Toast.makeText(this, "Peer connected: " + peerName + " (" + senderIp + ")", Toast.LENGTH_SHORT).show();
@@ -776,7 +801,7 @@ public class ChatActivity extends AppCompatActivity
             voiceRecorder.cancelRecording();
         }
         if (socketManager != null) {
-            socketManager.stopServer();
+            socketManager.unregisterListener(this);
         }
         if (wiFiDirectManager != null) {
             wiFiDirectManager.unregisterReceiver(this);

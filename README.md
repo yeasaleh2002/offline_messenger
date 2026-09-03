@@ -36,10 +36,14 @@ Modern communication apps (WhatsApp, Telegram, Signal) depend completely on cent
 ## ⚡ Key Features
 
 - 📶 **Zero-Internet Wi-Fi Direct Discovery**: Scan and pair nearby devices without needing an existing Wi-Fi router or hotspot.
-- 💬 **Real-Time Bidirectional Chat**: Sub-10ms local message delivery off the main thread via raw TCP sockets.
+- 👥 **WhatsApp-Style Offline Groups**: Create and manage offline groups with multi-member discussions, sender attribution labels, and automated Group Owner fan-out relaying.
+- 🎙️ **Voice Messaging (Voice Notes)**: Record AAC compressed `.m4a` voice messages and play them inline directly inside chat bubbles.
+- 📞 **Offline Real-Time VoIP Audio & Video Calling**: Sub-10ms peer-to-peer calling over high-speed UDP sockets (port `8889`) and JPEG video streams (port `8890`) with zero cloud dependencies.
 - 📁 **Chunk-Streamed File & Photo Sharing**: Transfer large photos, audio, documents, and videos directly without crashing device memory (zero-`OutOfMemoryError` streaming).
+- 📂 **Instant File Opening Access**: Integrated with Android `FileProvider` and external downloads directory, allowing receivers to open files immediately in system viewers.
 - 🤝 **Dynamic Peer Handshake**: Automated IP address resolution between Wi-Fi Direct Group Owners and Clients.
-- 💾 **Offline SQLite Persistence**: Contacts, conversation threads, timestamps, and received file paths are preserved locally in SQLite.
+- 💾 **Offline SQLite Persistence**: Contacts, individual threads, offline groups, timestamps, and received file paths are preserved locally in SQLite.
+- 🗑️ **One-Tap Storage Data Wipe**: Permanently erase all local databases, voice notes, attachments, and downloaded files in one tap from the dashboard.
 - 🔋 **Live Link Health & Connection Drop Indicators**: Real-time visual feedback if the radio link disconnects or needs re-pairing.
 
 ---
@@ -149,26 +153,33 @@ MeshConnect deliberately selects native Android and core networking technologies
 MeshConnect decouples connection discovery, TCP socket communication, and UI rendering cleanly into distinct layers:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    User Interface Layer                     │
-│  MainActivity  ◄──►  DeviceListActivity  ◄──►  ChatActivity  │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────┐
-│                    Business / Adapter Layer                 │
-│         ChatAdapter  •  DeviceAdapter  •  ChatDatabaseHelper│
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────┐
-│                     Network Engine Layer                    │
-│    P2PSocketManager ◄──► ServerThread (port 8888 listener)  │
-│                     ◄──► ClientTask   (async TCP sender)    │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────┐
-│                  Wi-Fi Direct Hardware Layer                │
-│    WiFiDirectManager ◄──► WiFiDirectBroadcastReceiver       │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                                 User Interface Layer                                   │
+│  MainActivity  ◄──►  DeviceListActivity  ◄──►  ChatActivity  ◄──►  GroupChatActivity   │
+│         ▲                                             ▲                  ▲             │
+│         └─────────────────────┬───────────────────────┴──────────────────┘             │
+│                               │ (Call Launch & Signaling)                              │
+│                               ▼                                                        │
+│                          CallActivity                                                  │
+└───────────────────────────────┬────────────────────────────────────────────────────────┘
+                                │
+┌───────────────────────────────▼────────────────────────────────────────────────────────┐
+│                         Business / Adapter Layer                                       │
+│    ChatAdapter  •  DeviceAdapter  •  GroupAdapter  •  ChatDatabaseHelper (SQLite)      │
+└───────────────────────────────┬────────────────────────────────────────────────────────┘
+                                │
+┌───────────────────────────────▼────────────────────────────────────────────────────────┐
+│                     Network Engine Layer (Unified Singleton)                           │
+│   P2PSocketManager (Singleton) ◄──► ServerThread (Port 8888 TCP listener)              │
+│                                ◄──► ClientTask   (Async TCP/UDP sender)                │
+│                                ◄──► AudioCallEngine (Port 8889 UDP VoIP)               │
+│                                ◄──► VideoCallEngine (Port 8890 TCP camera stream)      │
+└───────────────────────────────┬────────────────────────────────────────────────────────┘
+                                │
+┌───────────────────────────────▼────────────────────────────────────────────────────────┐
+│                       Wi-Fi Direct Hardware Layer                                      │
+│    WiFiDirectManager ◄──► WiFiDirectBroadcastReceiver (Android P2P Stack)              │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 1. **Discovery (`WiFiDirectManager`)**: Discovers nearby peers using Android's `WifiP2pManager`.
@@ -182,10 +193,10 @@ MeshConnect decouples connection discovery, TCP socket communication, and UI ren
 
 ## 📦 Packet Protocol Specification
 
-All communication occurs over TCP port `8888` using binary header frames:
+All direct communication occurs over high-speed sockets using binary header frames:
 
 ### 1. Handshake Packet (`0x03`)
-Sent automatically by the Client to the Group Owner upon connection to register its IP address and device model:
+Sent automatically by the Client to the Group Owner upon connection:
 ```
 [0x03] (1 byte) + [Name Length] (2 bytes short) + [Device Name UTF-8 bytes]
 ```
@@ -197,11 +208,23 @@ Sent automatically by the Client to the Group Owner upon connection to register 
 ```
 *Receiver returns a `0x06` ACK byte.*
 
-### 3. File / Image Packet (`0x02`)
+### 3. File / Voice Note Packet (`0x02`)
 ```
-[0x02] (1 byte) + [Filename Length] (2 bytes short) + [Filename UTF-8 bytes] + [File Size] (8 bytes long) + [Raw File Stream in 8KB Chunks...]
+[0x02] (1 byte) + [Filename Length] (2 bytes short) + [Filename UTF-8 bytes] + [File Size] (8 bytes long) + [Raw Stream in 8KB Chunks...]
 ```
 *Client executes `socket.shutdownOutput()` cleanly, and Receiver returns a `0x06` ACK byte upon writing to disk.*
+
+### 4. Offline Group Message Packet (`0x04`)
+```
+[0x04] (1 byte) + [GroupId Len] (2 bytes) + [GroupId] + [GroupName Len] (2 bytes) + [GroupName] + [SenderName Len] (2 bytes) + [SenderName] + [Text Len] (4 bytes) + [Text]
+```
+*The Group Owner receives the packet, displays it locally, and automatically relays it to other connected client peers.*
+
+### 5. Call Signaling Packets (`0x05`, `0x07`, `0x08`, `0x09`)
+- **`0x05 (INVITE)`**: `[0x05] + [CallerName Len] (2 bytes) + [CallerName] + [CallMode Byte: 0=Audio, 1=Video]`
+- **`0x07 (ACCEPT)`**: Signals peer accepted the call $\rightarrow$ starts audio/video stream engines.
+- **`0x08 (DECLINE)`**: Signals peer declined the call.
+- **`0x09 (END)`**: Signals active call termination.
 
 ---
 
@@ -213,35 +236,48 @@ Mesh_Connect_Offline_P2P_Chat/
 │   ├── build.gradle                            # App-level dependencies & Android SDK target
 │   └── src/
 │       └── main/
-│           ├── AndroidManifest.xml             # Wi-Fi Direct, Bluetooth & Location permissions
+│           ├── AndroidManifest.xml             # Permissions, FileProvider & Activity registrations
 │           ├── java/com/meshconnect/offlinechat/
 │           │   │
-│           │   ├── MainActivity.java           # Entry dashboard with system status & action cards
-│           │   ├── DeviceListActivity.java     # Scan, discover, and pair with nearby P2P peers
-│           │   ├── ChatActivity.java           # Main messaging screen (text, files, status, SQLite)
+│           │   ├── MainActivity.java           # Dashboard: Scan, History, Offline Groups & Clear Data
+│           │   ├── DeviceListActivity.java     # Discover and pair with nearby P2P peers
+│           │   ├── ChatActivity.java           # 1-on-1 Chat screen (text, files, voice notes, calls)
+│           │   ├── CallActivity.java           # Real-time VoIP screen (audio/video, PiP, speaker, mute)
+│           │   ├── GroupListActivity.java      # Offline group list & group creation modal
+│           │   ├── GroupChatActivity.java      # Multi-peer group discussion screen (like WhatsApp)
+│           │   │
+│           │   ├── audio/                      # Audio recording utilities
+│           │   │   └── VoiceRecorderHelper.java# MediaRecorder AAC/M4A voice note engine
+│           │   │
+│           │   ├── call/                       # Real-time offline VoIP engines
+│           │   │   ├── AudioCallEngine.java    # UDP 8889 PCM streaming (AudioRecord + AudioTrack)
+│           │   │   └── VideoCallEngine.java    # TCP 8890 camera preview frame streaming
 │           │   │
 │           │   ├── wifi/                       # Hardware Wi-Fi Direct layer
 │           │   │   ├── WiFiDirectManager.java  # Discovery, connection initiation, group handling
-│           │   │   └── WiFiDirectBroadcastReceiver.java # Listens for system Wi-Fi Direct state intents
+│           │   │   └── WiFiDirectBroadcastReceiver.java # Wi-Fi Direct system broadcast receiver
 │           │   │
-│           │   ├── network/                    # Core TCP socket engine
+│           │   ├── network/                    # Core TCP/UDP socket engine
 │           │   │   ├── P2PSocketManager.java   # Facade coordinating background server & client tasks
-│           │   │   ├── ServerThread.java       # ServerSocket (port 8888) reading text, files, handshakes
-│           │   │   └── ClientTask.java         # Async socket client streaming text & files with ACKs
+│           │   │   ├── ServerThread.java       # ServerSocket (port 8888) reading packets & signaling
+│           │   │   └── ClientTask.java         # Async socket client streaming messages, files & calls
 │           │   │
 │           │   ├── model/                      # Data models
-│           │   │   ├── ChatMessage.java        # Message model (id, text, status, file path, size)
-│           │   │   └── DeviceItem.java         # Peer device model (name, mac address, RSSI, type)
+│           │   │   ├── ChatMessage.java        # Message model (text, image, file, audio voice notes)
+│           │   │   ├── DeviceItem.java         # Peer device model (name, mac address, RSSI, type)
+│           │   │   └── GroupModel.java         # Offline group model (id, name, createdBy, timestamp)
 │           │   │
 │           │   ├── db/                         # Persistence layer
-│           │   │   └── ChatDatabaseHelper.java # SQLiteOpenHelper storing contacts and messages
+│           │   │   └── ChatDatabaseHelper.java # SQLite storage for contacts, messages, groups & data wipe
 │           │   │
 │           │   └── adapter/                    # RecyclerView UI adapters
-│           │       ├── ChatAdapter.java        # Heterogeneous bubbles (sent vs received, files/images)
-│           │       └── DeviceAdapter.java      # Nearby peer device list item adapter
+│           │       ├── ChatAdapter.java        # Dynamic bubbles (files, voice note player, sender labels)
+│           │       ├── DeviceAdapter.java      # Nearby peer device list item adapter
+│           │       └── GroupAdapter.java       # Group list item adapter
 │           │
 │           └── res/                            # Android UI resources
-│               ├── layout/                     # XML layouts (activity_main, activity_chat, etc.)
+│               ├── layout/                     # XML layouts (activity_main, activity_chat, activity_call, etc.)
+│               ├── xml/file_paths.xml          # FileProvider storage path definitions
 │               ├── values/                     # Colors, strings, themes, styles
 │               └── drawable/                   # Icons, vectors, bubble backgrounds
 │
@@ -255,19 +291,34 @@ Mesh_Connect_Offline_P2P_Chat/
 
 ## 🔧 What Was Built & Fixed (Engineering Log)
 
-If you are reviewing recent commits, here are the critical fixes implemented:
+1. **Unified `P2PSocketManager` Singleton & Zero Port Collisions**:
+   - Refactored `P2PSocketManager` from per-activity instances into a thread-safe Singleton (`P2PSocketManager.getInstance(context)`).
+   - Eliminated `java.net.BindException: Address already in use` when navigating between `ChatActivity`, `CallActivity`, `GroupChatActivity`, and `MainActivity`.
+   - Supports thread-safe multi-listener registration (`CopyOnWriteArrayList<SocketEventListener>`) so all activities receive appropriate packets without thread locking.
 
-1. **Fixed Group Owner Loopback / Self-Echo**:
-   - *Issue*: In Android Wi-Fi Direct, `info.groupOwnerAddress` is `192.168.49.1`. The owner device was setting `peerIp` to its own IP, causing it to send messages to itself and instantly echo them back without sending to the client.
-   - *Fix*: The Group Owner leaves `peerIp` unset until the client registers via handshake. Loopback transmission is blocked.
+2. **Automated Group Owner Fan-Out Relaying (`TYPE_GROUP_MESSAGE = 0x04`)**:
+   - Built full group creation, listing, and multi-user chat.
+   - Designed sender attribution so incoming group bubbles clearly show who sent the message.
+   - Group Owner tracks connected client IP addresses upon handshake and automatically relays incoming group messages and attachments to all other connected client devices in the mesh.
+   - Built `broadcastGroupMessage` and `broadcastGroupFile` to abstract client-gateway and owner-mesh fan-out dispatching.
 
-2. **Added Automated Client Handshake (`TYPE_HANDSHAKE = 0x03`)**:
-   - *Issue*: Android does not inform the Group Owner of the Client's dynamic IP address (`192.168.49.xxx`).
-   - *Fix*: When the client connects, it immediately sends a handshake packet to `192.168.49.1:8888`. The Group Owner extracts the client's actual socket address and dynamically binds `peerIp = clientIp`.
+3. **Real-Time VoIP Audio & Video Calling Handshake**:
+   - Ultra-low latency VoIP over UDP port `8889` (`AudioCallEngine.java`) and direct camera frame streaming over TCP port `8890` (`VideoCallEngine.java`, `CallActivity.java`).
+   - Clean signaling state machine: `INVITE (0x05)` $\rightarrow$ Ringing $\rightarrow$ `ACCEPT (0x07)` / `DECLINE (0x08)` $\rightarrow$ `END (0x09)`.
+   - Replaced artificial auto-connect timers with true synchronized acceptance and added a 30-second ringing timeout.
+   - Cached camera preview dimensions to optimize frame processing and avoid repetitive parameter calls during high-frame-rate streaming.
 
-3. **Resolved File Transfer Failures & Out-Of-Memory Risks**:
-   - *Issue*: Sockets were being closed immediately after `flush()`, sending a TCP Reset (`RST`) and killing the file reception. Furthermore, reading full files into `byte[]` risked RAM crashes on large files.
-   - *Fix*: Files are now streamed directly from disk in 8KB chunks. After transmission, the sender calls `socket.shutdownOutput()` (clean TCP FIN) and waits for a `0x06` ACK verification from the receiver.
+4. **Robust File Extension & Native File Opening (`FileProvider`)**:
+   - Stored received media in `getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)/MeshConnect/`.
+   - Configured `FileProvider` with `FLAG_GRANT_READ_URI_PERMISSION` so attachments open instantly in external viewers.
+   - Replaced fragile `MimeTypeMap.getFileExtensionFromUrl()` with robust substring dot indexing, enabling files with spaces, numbers, and symbols to resolve their correct MIME type every time.
+
+5. **Dashboard Incoming Call Detection & Background Listening**:
+   - Bound `P2PSocketManager` early in `MainActivity` so nodes can receive incoming VoIP calls directly on the home dashboard.
+
+6. **One-Tap Storage Data Wipe**:
+   - Added a red alert card on the dashboard with a confirmation dialog.
+   - Cleans all SQLite records (`messages`, `contacts`, `groups_table`) and deletes all local voice notes, received files, and external downloaded files.
 
 ---
 
@@ -315,6 +366,9 @@ adb -s <DEVICE_2_SERIAL> install app/build/outputs/apk/debug/app-debug.apk
    - Phone B will show `"Connected (Wi-Fi Direct • Owner/Client)"`.
 8. **Test Text Chat**: Type a message and tap Send. It should appear on the other phone in <10ms.
 9. **Test File Sharing**: Tap the **attachment clip (+)**, pick an image or document, and send. The other phone will receive, save it to internal storage, and render it in the chat timeline.
+10. **Test Voice Notes**: Tap the **mic icon**, record a voice message, and tap again to send. Play it back inline in the chat bubble.
+11. **Test VoIP Audio/Video Call**: Tap the **phone or video icon** in the top bar. The remote phone will ring with Accept/Decline buttons. Tap Accept to stream real-time audio (UDP 8889) and video (TCP 8890).
+12. **Test Offline Groups**: Navigate to **Offline Groups**, create a group (e.g. "Emergency Team"), and broadcast messages that fan out across all connected peers.
 
 ---
 
@@ -323,9 +377,12 @@ adb -s <DEVICE_2_SERIAL> install app/build/outputs/apk/debug/app-debug.apk
 | Symptom | Cause | Solution |
 |---|---|---|
 | **Peers not discovering each other** | Wi-Fi toggle is OFF or Location service is disabled | Ensure Wi-Fi is toggled **ON** on both phones and Location / GPS is turned ON (required by Android OS for Wi-Fi Direct beaconing). |
-| **"Missing permissions" warning** | Runtime permissions denied | On Android 13+, ensure `NEARBY_WIFI_DEVICES` permission is granted. On Android 12 and below, ensure `ACCESS_FINE_LOCATION` is granted. |
+| **"Missing permissions" warning** | Runtime permissions denied | On Android 13+, ensure `NEARBY_WIFI_DEVICES` permission is granted. On Android 12 and below, ensure `ACCESS_FINE_LOCATION` is granted. For calls and voice notes, grant `RECORD_AUDIO` and `CAMERA`. |
+| **Call shows "No Answer"** | Remote peer did not tap Accept within 30s | Calls automatically time out after 30 seconds of ringing if unaddressed to conserve battery and radio channel bandwidth. |
+| **Microphone or Camera not working in call** | App permissions missing | Check App Settings $\rightarrow$ Permissions and ensure Microphone and Camera permissions are allowed. |
 | **Connection dropped abruptly** | One device moved out of radio range (>100m) or Wi-Fi was toggled off | Tap the Back button, tap **Rescan**, and reconnect. The app detects disconnections and displays offline status. |
 | **"Waiting for peer handshake..." toast** | Group Owner attempted to send before Client handshake arrived | The client automatically handshakes within 600ms of pairing. Ensure the client has connected successfully. |
+| **Port Conflict (`BindException: 8888`)** | Multiple socket instances on the same port | Resolved via the unified `P2PSocketManager` Singleton architecture; single background server thread manages port 8888 cleanly. |
 
 ---
 

@@ -139,7 +139,9 @@ public class VideoCallEngine implements Camera.PreviewCallback, SurfaceHolder.Ca
 
             camera = Camera.open(targetCameraId);
             Camera.Parameters params = camera.getParameters();
-            params.setPreviewSize(320, 240); // Optimized for ultra-fast real-time P2P transmission
+            int previewWidth = 320;
+            int previewHeight = 240;
+            params.setPreviewSize(previewWidth, previewHeight); // Optimized for ultra-fast real-time P2P transmission
             params.setPreviewFormat(ImageFormat.NV21);
             camera.setParameters(params);
             camera.setDisplayOrientation(90);
@@ -177,6 +179,8 @@ public class VideoCallEngine implements Camera.PreviewCallback, SurfaceHolder.Ca
     }
 
     private long lastFrameSentTime = 0;
+    private static final int PREVIEW_W = 320;
+    private static final int PREVIEW_H = 240;
 
     @Override
     public void onPreviewFrame(byte[] data, Camera camera) {
@@ -188,10 +192,9 @@ public class VideoCallEngine implements Camera.PreviewCallback, SurfaceHolder.Ca
         lastFrameSentTime = now;
 
         try {
-            Camera.Size size = camera.getParameters().getPreviewSize();
-            YuvImage yuvImage = new YuvImage(data, ImageFormat.NV21, size.width, size.height, null);
+            YuvImage yuvImage = new YuvImage(data, ImageFormat.NV21, PREVIEW_W, PREVIEW_H, null);
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            yuvImage.compressToJpeg(new Rect(0, 0, size.width, size.height), 40, baos); // 40% JPEG quality for high speed
+            yuvImage.compressToJpeg(new Rect(0, 0, PREVIEW_W, PREVIEW_H), 40, baos); // 40% JPEG quality for high speed
             byte[] jpegBytes = baos.toByteArray();
 
             synchronized (this) {

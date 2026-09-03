@@ -17,7 +17,10 @@ import androidx.core.content.ContextCompat;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
 import com.meshconnect.offlinechat.db.ChatDatabaseHelper;
+import com.meshconnect.offlinechat.network.P2PSocketManager;
+import com.meshconnect.offlinechat.network.ServerThread;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -25,7 +28,7 @@ import java.util.UUID;
 /**
  * Home dashboard activity for MeshConnect offline P2P chat application.
  */
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements P2PSocketManager.SocketEventListener {
 
     private MaterialCardView cardScanDevices;
     private MaterialCardView cardChatHistory;
@@ -50,6 +53,13 @@ public class MainActivity extends AppCompatActivity {
         setupPermissionHandler();
         setupClickListeners();
         checkAndRequestPermissions();
+        initP2PSocketService();
+    }
+
+    private void initP2PSocketService() {
+        P2PSocketManager socketManager = P2PSocketManager.getInstance(this);
+        socketManager.registerListener(this);
+        socketManager.startServer();
     }
 
     private void initViews() {
@@ -183,5 +193,35 @@ public class MainActivity extends AppCompatActivity {
                 })
                 .setNegativeButton("Cancel", (dialog, which) -> dialog.dismiss())
                 .show();
+    }
+
+    // =========================================================================
+    // Background P2PSocketManager Listeners for Dashboard
+    // =========================================================================
+
+    @Override
+    public void onCallSignalingReceived(byte callSignal, String callerName, String callType, String senderIp) {
+        if (callSignal == ServerThread.TYPE_CALL_INVITE) {
+            Intent intent = new Intent(this, CallActivity.class);
+            intent.putExtra("EXTRA_PEER_IP", senderIp);
+            intent.putExtra("EXTRA_PEER_NAME", callerName != null && !callerName.isEmpty() ? callerName : "Incoming Peer");
+            intent.putExtra("EXTRA_CALL_TYPE", callType != null ? callType : "AUDIO");
+            intent.putExtra("EXTRA_IS_INCOMING", true);
+            startActivity(intent);
+        }
+    }
+
+    @Override public void onHandshakeReceived(String peerName, String senderIp) {}
+    @Override public void onMessageReceived(String messageText, String senderIp) {}
+    @Override public void onGroupMessageReceived(String groupId, String groupName, String senderName, String messageText, String senderIp) {}
+    @Override public void onFileReceived(File savedFile, String fileName, long fileSize, String senderIp) {}
+    @Override public void onMessageSent(String messageText) {}
+    @Override public void onFileSent(String fileName) {}
+    @Override public void onNetworkError(String errorMessage) {}
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        P2PSocketManager.getInstance(this).unregisterListener(this);
     }
 }

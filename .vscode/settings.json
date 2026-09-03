@@ -1,5 +1,13 @@
 {
   "java.configuration.updateBuildConfiguration": "automatic",
+  "java.jdt.ls.java.home": "C:/Users/yeasa/.jdks/jbr-17.0.14",
+  "java.configuration.runtimes": [
+    {
+      "name": "JavaSE-17",
+      "path": "C:/Users/yeasa/.jdks/jbr-17.0.14",
+      "default": true
+    }
+  ],
   "java.project.sourcePaths": [
     "app/src/main/java",
     "app/src/test/java"
