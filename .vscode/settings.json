@@ -1,0 +1,8 @@
+{
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.project.sourcePaths": [
+    "app/src/main/java",
+    "app/src/test/java"
+  ],
+  "java.errors.incompleteClasspath.severity": "ignore"
+}
