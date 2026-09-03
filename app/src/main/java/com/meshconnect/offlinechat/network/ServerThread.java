@@ -24,8 +24,11 @@ public class ServerThread extends Thread {
 
     public static final byte TYPE_TEXT = 0x01;
     public static final byte TYPE_FILE = 0x02;
+    public static final byte TYPE_HANDSHAKE = 0x03;
+    public static final byte TYPE_ACK = 0x06;
 
     public interface OnMessageReceivedListener {
+        void onHandshakeReceived(String peerName, String senderIp);
         void onMessageReceived(String messageText, String senderIp);
         void onFileReceived(File savedFile, String fileName, long fileSize, String senderIp);
         void onServerError(String errorMessage);
@@ -60,15 +63,42 @@ public class ServerThread extends Thread {
                     Log.d(TAG, "Incoming connection from: " + clientIp);
 
                     DataInputStream dis = new DataInputStream(clientSocket.getInputStream());
+                    java.io.DataOutputStream dos = new java.io.DataOutputStream(clientSocket.getOutputStream());
                     byte packetType = dis.readByte();
 
-                    if (packetType == TYPE_TEXT) {
+                    if (packetType == TYPE_HANDSHAKE) {
+                        // 0. Peer Handshake Packet for dynamic IP binding
+                        short nameLen = dis.readShort();
+                        byte[] nameBytes = new byte[nameLen];
+                        dis.readFully(nameBytes);
+                        String peerName = new String(nameBytes, StandardCharsets.UTF_8);
+                        Log.d(TAG, "Received handshake from peer " + peerName + " at " + clientIp);
+
+                        // Send back ACK
+                        try {
+                            dos.writeByte(TYPE_ACK);
+                            dos.flush();
+                        } catch (IOException ignored) {}
+
+                        mainHandler.post(() -> {
+                            if (listener != null) {
+                                listener.onHandshakeReceived(peerName, clientIp);
+                            }
+                        });
+
+                    } else if (packetType == TYPE_TEXT) {
                         // 1. Read Text Packet
                         int textLength = dis.readInt();
                         byte[] textBytes = new byte[textLength];
                         dis.readFully(textBytes);
                         String receivedMessage = new String(textBytes, StandardCharsets.UTF_8);
                         Log.d(TAG, "Received text payload from " + clientIp + ": " + receivedMessage);
+
+                        // Send back ACK
+                        try {
+                            dos.writeByte(TYPE_ACK);
+                            dos.flush();
+                        } catch (IOException ignored) {}
 
                         mainHandler.post(() -> {
                             if (listener != null) {
@@ -108,6 +138,12 @@ public class ServerThread extends Thread {
                         }
 
                         Log.d(TAG, "File successfully received and saved to: " + destFile.getAbsolutePath());
+
+                        // Send back ACK so client knows transmission is verified
+                        try {
+                            dos.writeByte(TYPE_ACK);
+                            dos.flush();
+                        } catch (IOException ignored) {}
 
                         mainHandler.post(() -> {
                             if (listener != null) {

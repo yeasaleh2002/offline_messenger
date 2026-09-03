@@ -112,6 +112,11 @@ public class ChatActivity extends AppCompatActivity
         peerIp = getIntent().getStringExtra("EXTRA_PEER_IP");
         isGroupOwner = getIntent().getBooleanExtra("EXTRA_IS_GROUP_OWNER", false);
 
+        // On Group Owner, 192.168.49.1 is own IP; peer IP will be acquired via handshake
+        if (isGroupOwner && "192.168.49.1".equals(peerIp)) {
+            peerIp = null;
+        }
+
         if (peerName == null) {
             peerName = "Nearby Peer";
         }
@@ -137,11 +142,18 @@ public class ChatActivity extends AppCompatActivity
     private void updateStatusConnected() {
         isConnected = true;
         String connectionMedium = "WIFI_DIRECT".equals(peerType) ? "Wi-Fi Direct" : "BLE Mesh";
-        if (peerIp != null && !peerIp.isEmpty()) {
-            String role = isGroupOwner ? "Group Owner" : "Client";
-            tvPeerStatus.setText(String.format("Connected (%s • %s • %s)", connectionMedium, role, peerIp));
+        if (isGroupOwner) {
+            if (peerIp != null && !peerIp.isEmpty() && !"192.168.49.1".equals(peerIp)) {
+                tvPeerStatus.setText(String.format("Connected (%s • Owner • Peer: %s)", connectionMedium, peerIp));
+            } else {
+                tvPeerStatus.setText(String.format("Connected (%s • Owner • Awaiting Peer)", connectionMedium));
+            }
         } else {
-            tvPeerStatus.setText(String.format("Connected (%s Link)", connectionMedium));
+            if (peerIp != null && !peerIp.isEmpty()) {
+                tvPeerStatus.setText(String.format("Connected (%s • Client • %s)", connectionMedium, peerIp));
+            } else {
+                tvPeerStatus.setText(String.format("Connected (%s Link)", connectionMedium));
+            }
         }
         tvPeerStatus.setTextColor(ContextCompat.getColor(this, R.color.secondary_dark));
         if (viewConnectionIndicator != null) {
@@ -203,6 +215,16 @@ public class ChatActivity extends AppCompatActivity
         // Start TCP ServerSocket on background thread listening for peer transmissions
         socketManager = new P2PSocketManager(this, this);
         socketManager.startServer();
+
+        // If this device is a Client (not Group Owner) and already has the Group Owner IP,
+        // send immediate handshake to notify the Group Owner of our identity and IP.
+        if (!isGroupOwner && peerIp != null && !peerIp.isEmpty()) {
+            messageHandler.postDelayed(() -> {
+                if (socketManager != null && peerIp != null) {
+                    socketManager.sendHandshake(peerIp, android.os.Build.MODEL);
+                }
+            }, 600);
+        }
     }
 
     private void setupFilePicker() {
@@ -232,6 +254,12 @@ public class ChatActivity extends AppCompatActivity
             return;
         }
 
+        // Prevent loopback on Group Owner before Client connects
+        if (isGroupOwner && (peerIp == null || peerIp.isEmpty() || "192.168.49.1".equals(peerIp))) {
+            Toast.makeText(this, "Waiting for peer device to establish handshake...", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         // 1. Capture text and create local ChatMessage model
         ChatMessage sentMessage = new ChatMessage(
                 "my-node-id",
@@ -252,7 +280,8 @@ public class ChatActivity extends AppCompatActivity
         scrollToBottom();
 
         // 3. Trigger the background socket sender thread
-        if (peerIp != null && !peerIp.isEmpty()) {
+        boolean canSend = peerIp != null && !peerIp.isEmpty() && (!isGroupOwner || !"192.168.49.1".equals(peerIp));
+        if (canSend) {
             socketManager.sendMessage(peerIp, text);
             dbHelper.updateMessageStatus(rowId, ChatMessage.MessageStatus.DELIVERED.name());
             sentMessage.setStatus(ChatMessage.MessageStatus.DELIVERED);
@@ -267,10 +296,16 @@ public class ChatActivity extends AppCompatActivity
     }
 
     /**
-     * Converts selected URI into a byte array, creates local copy, persists in SQLite,
-     * updates chat UI, and triggers socket file transfer.
+     * Converts selected URI into a streamed file, creates local copy, persists in SQLite,
+     * updates chat UI, and triggers socket file transfer without loading entire file in memory.
      */
     private void handleSelectedFile(Uri uri) {
+        // Prevent loopback on Group Owner before Client connects
+        if (isGroupOwner && (peerIp == null || peerIp.isEmpty() || "192.168.49.1".equals(peerIp))) {
+            Toast.makeText(this, "Waiting for peer device to establish handshake...", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         try {
             String fileName = "attachment.dat";
             long fileSize = 0;
@@ -285,10 +320,12 @@ public class ChatActivity extends AppCompatActivity
                 }
             }
 
-            // Read file into byte array
-            byte[] fileBytes;
+            // Stream file directly to local sent_files directory without loading entire byte[] in RAM
+            File sentDir = new File(getFilesDir(), "sent_files");
+            if (!sentDir.exists()) sentDir.mkdirs();
+            File localFile = new File(sentDir, System.currentTimeMillis() + "_" + fileName);
             try (InputStream is = getContentResolver().openInputStream(uri);
-                 ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+                 FileOutputStream fos = new FileOutputStream(localFile)) {
                 if (is == null) {
                     Toast.makeText(this, "Unable to read selected file.", Toast.LENGTH_SHORT).show();
                     return;
@@ -296,22 +333,12 @@ public class ChatActivity extends AppCompatActivity
                 byte[] buffer = new byte[8192];
                 int bytesRead;
                 while ((bytesRead = is.read(buffer)) != -1) {
-                    baos.write(buffer, 0, bytesRead);
+                    fos.write(buffer, 0, bytesRead);
                 }
-                fileBytes = baos.toByteArray();
-                if (fileSize == 0) {
-                    fileSize = fileBytes.length;
-                }
-            }
-
-            // Save local copy to sent_files directory
-            File sentDir = new File(getFilesDir(), "sent_files");
-            if (!sentDir.exists()) sentDir.mkdirs();
-            File localFile = new File(sentDir, System.currentTimeMillis() + "_" + fileName);
-            try (FileOutputStream fos = new FileOutputStream(localFile)) {
-                fos.write(fileBytes);
                 fos.flush();
             }
+
+            fileSize = localFile.length();
 
             // Determine MessageType (IMAGE or FILE)
             String mimeType = getContentResolver().getType(uri);
@@ -345,8 +372,9 @@ public class ChatActivity extends AppCompatActivity
             // 4. Trigger socket transmission with visual status updates
             updateStatusTransferring(fileName);
 
-            if (peerIp != null && !peerIp.isEmpty()) {
-                socketManager.sendFile(peerIp, fileName, fileBytes);
+            boolean canSend = peerIp != null && !peerIp.isEmpty() && (!isGroupOwner || !"192.168.49.1".equals(peerIp));
+            if (canSend) {
+                socketManager.sendFile(peerIp, fileName, localFile);
                 dbHelper.updateMessageStatus(rowId, ChatMessage.MessageStatus.DELIVERED.name());
                 sentFileMessage.setStatus(ChatMessage.MessageStatus.DELIVERED);
                 chatAdapter.notifyItemChanged(sentPosition);
@@ -370,8 +398,28 @@ public class ChatActivity extends AppCompatActivity
     // =========================================================================
 
     @Override
+    public void onHandshakeReceived(String peerName, String senderIp) {
+        Log.d(TAG, "Peer handshake received: " + peerName + " from IP: " + senderIp);
+        if (senderIp != null && !senderIp.isEmpty() && !senderIp.equals("127.0.0.1")) {
+            this.peerIp = senderIp;
+            this.peerName = peerName;
+            tvPeerName.setText(peerName);
+            updateStatusConnected();
+            Toast.makeText(this, "Peer connected: " + peerName + " (" + senderIp + ")", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
     public void onMessageReceived(String messageText, String senderIp) {
         Log.d(TAG, "Incoming socket message received from " + senderIp + ": " + messageText);
+
+        // Dynamically bind peerIp on Group Owner when client sends a message
+        if (senderIp != null && !senderIp.isEmpty() && !senderIp.equals("127.0.0.1")) {
+            if (peerIp == null || isGroupOwner || "192.168.49.1".equals(peerIp)) {
+                this.peerIp = senderIp;
+                updateStatusConnected();
+            }
+        }
 
         ChatMessage receivedMessage = new ChatMessage(
                 peerId != null ? peerId : senderIp,
@@ -394,6 +442,14 @@ public class ChatActivity extends AppCompatActivity
     @Override
     public void onFileReceived(File savedFile, String fileName, long fileSize, String senderIp) {
         Log.d(TAG, "Incoming file received and stored at: " + savedFile.getAbsolutePath());
+
+        // Dynamically bind peerIp on Group Owner when client sends a file
+        if (senderIp != null && !senderIp.isEmpty() && !senderIp.equals("127.0.0.1")) {
+            if (peerIp == null || isGroupOwner || "192.168.49.1".equals(peerIp)) {
+                this.peerIp = senderIp;
+                updateStatusConnected();
+            }
+        }
 
         ChatMessage.MessageType type = (fileName != null && (fileName.endsWith(".jpg") || fileName.endsWith(".png") || fileName.endsWith(".jpeg")))
                 ? ChatMessage.MessageType.IMAGE
@@ -467,8 +523,19 @@ public class ChatActivity extends AppCompatActivity
 
     @Override
     public void onConnectionSuccess(WifiP2pInfo info, String groupOwnerAddress, boolean isGroupOwner) {
-        this.peerIp = groupOwnerAddress;
         this.isGroupOwner = isGroupOwner;
+        if (isGroupOwner) {
+            if ("192.168.49.1".equals(this.peerIp)) {
+                this.peerIp = null;
+            }
+        } else {
+            this.peerIp = groupOwnerAddress;
+            messageHandler.postDelayed(() -> {
+                if (socketManager != null && peerIp != null) {
+                    socketManager.sendHandshake(peerIp, android.os.Build.MODEL);
+                }
+            }, 600);
+        }
         updateStatusConnected();
     }
 

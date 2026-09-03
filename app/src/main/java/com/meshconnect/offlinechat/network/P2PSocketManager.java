@@ -15,6 +15,7 @@ public class P2PSocketManager {
     public static final int DEFAULT_PORT = 8888;
 
     public interface SocketEventListener {
+        void onHandshakeReceived(String peerName, String senderIp);
         void onMessageReceived(String messageText, String senderIp);
         void onFileReceived(File savedFile, String fileName, long fileSize, String senderIp);
         void onMessageSent(String messageText);
@@ -45,6 +46,14 @@ public class P2PSocketManager {
 
         serverThread = new ServerThread(context, port, new ServerThread.OnMessageReceivedListener() {
             @Override
+            public void onHandshakeReceived(String peerName, String senderIp) {
+                Log.d(TAG, "P2PSocketManager received handshake from " + peerName + " (" + senderIp + ")");
+                if (eventListener != null) {
+                    eventListener.onHandshakeReceived(peerName, senderIp);
+                }
+            }
+
+            @Override
             public void onMessageReceived(String messageText, String senderIp) {
                 Log.d(TAG, "P2PSocketManager received message from " + senderIp);
                 if (eventListener != null) {
@@ -74,6 +83,26 @@ public class P2PSocketManager {
     }
 
     /**
+     * Sends a handshake packet to register this client's identity and IP with the peer / Group Owner.
+     */
+    public void sendHandshake(String targetIp, String localDeviceName) {
+        ClientTask.sendHandshake(targetIp, this.port, localDeviceName, new ClientTask.OnSendListener() {
+            @Override
+            public void onSuccess() {
+                Log.d(TAG, "Handshake dispatched successfully to " + targetIp);
+            }
+
+            @Override
+            public void onFailure(String errorMessage) {
+                Log.w(TAG, "Handshake attempt failed: " + errorMessage);
+                if (eventListener != null) {
+                    eventListener.onNetworkError("Handshake notice: " + errorMessage);
+                }
+            }
+        });
+    }
+
+    /**
      * Sends a text payload to a remote peer IP asynchronously.
      */
     public void sendMessage(String targetIp, String messageText) {
@@ -95,7 +124,28 @@ public class P2PSocketManager {
     }
 
     /**
-     * Sends a binary file payload to a remote peer IP asynchronously.
+     * Streams a File object to the remote peer IP asynchronously.
+     */
+    public void sendFile(String targetIp, String fileName, File file) {
+        ClientTask.sendFile(targetIp, this.port, fileName, file, new ClientTask.OnSendListener() {
+            @Override
+            public void onSuccess() {
+                if (eventListener != null) {
+                    eventListener.onFileSent(fileName);
+                }
+            }
+
+            @Override
+            public void onFailure(String errorMessage) {
+                if (eventListener != null) {
+                    eventListener.onNetworkError(errorMessage);
+                }
+            }
+        });
+    }
+
+    /**
+     * Sends a binary file payload to a remote peer IP asynchronously (byte array fallback).
      */
     public void sendFile(String targetIp, String fileName, byte[] fileBytes) {
         ClientTask.sendFile(targetIp, this.port, fileName, fileBytes, new ClientTask.OnSendListener() {

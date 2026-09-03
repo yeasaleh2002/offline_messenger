@@ -33,6 +33,57 @@ public class ClientTask {
     private static final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     /**
+     * Transmits a handshake packet to register this client's identity and IP with the peer / Group Owner.
+     */
+    public static void sendHandshake(String targetIp, int targetPort, String localDeviceName, OnSendListener listener) {
+        if (targetIp == null || targetIp.trim().isEmpty()) {
+            if (listener != null) listener.onFailure("Invalid target IP address.");
+            return;
+        }
+
+        executor.execute(() -> {
+            Socket socket = null;
+            DataOutputStream dos = null;
+            java.io.DataInputStream dis = null;
+            try {
+                Log.d(TAG, "Sending handshake to " + targetIp + ":" + targetPort + " from " + localDeviceName);
+                socket = new Socket();
+                socket.bind(null);
+                socket.connect(new InetSocketAddress(targetIp.trim(), targetPort), SOCKET_TIMEOUT_MS);
+
+                dos = new DataOutputStream(socket.getOutputStream());
+                dis = new java.io.DataInputStream(socket.getInputStream());
+
+                byte[] nameBytes = (localDeviceName != null ? localDeviceName : "Peer Device").getBytes(StandardCharsets.UTF_8);
+                dos.writeByte(ServerThread.TYPE_HANDSHAKE);
+                dos.writeShort(nameBytes.length);
+                dos.write(nameBytes);
+                dos.flush();
+
+                // Wait for ACK from receiver
+                try {
+                    byte ack = dis.readByte();
+                    Log.d(TAG, "Handshake ACK received: " + ack);
+                } catch (Exception ignored) {}
+
+                mainHandler.post(() -> {
+                    if (listener != null) listener.onSuccess();
+                });
+
+            } catch (IOException e) {
+                Log.e(TAG, "Error sending handshake to " + targetIp + ":" + targetPort, e);
+                mainHandler.post(() -> {
+                    if (listener != null) listener.onFailure("Handshake failed: " + e.getMessage());
+                });
+            } finally {
+                closeQuietly(dis);
+                closeQuietly(dos);
+                closeQuietly(socket);
+            }
+        });
+    }
+
+    /**
      * Transmits a UTF-8 text message payload to the target peer.
      */
     public static void sendText(String targetIp, int targetPort, String messageText, OnSendListener listener) {
@@ -49,12 +100,15 @@ public class ClientTask {
         executor.execute(() -> {
             Socket socket = null;
             DataOutputStream dos = null;
+            java.io.DataInputStream dis = null;
             try {
                 socket = new Socket();
                 socket.bind(null);
                 socket.connect(new InetSocketAddress(targetIp.trim(), targetPort), SOCKET_TIMEOUT_MS);
 
                 dos = new DataOutputStream(socket.getOutputStream());
+                dis = new java.io.DataInputStream(socket.getInputStream());
+
                 byte[] textBytes = messageText.getBytes(StandardCharsets.UTF_8);
 
                 // Header Protocol: TYPE_TEXT (0x01) + Length (int) + UTF-8 bytes
@@ -62,6 +116,12 @@ public class ClientTask {
                 dos.writeInt(textBytes.length);
                 dos.write(textBytes);
                 dos.flush();
+
+                // Wait for ACK
+                try {
+                    byte ack = dis.readByte();
+                    Log.d(TAG, "Text delivery ACK received: " + ack);
+                } catch (Exception ignored) {}
 
                 Log.d(TAG, "Text message sent successfully (" + textBytes.length + " bytes).");
                 mainHandler.post(() -> {
@@ -74,6 +134,7 @@ public class ClientTask {
                     if (listener != null) listener.onFailure("Send failed: " + e.getMessage());
                 });
             } finally {
+                closeQuietly(dis);
                 closeQuietly(dos);
                 closeQuietly(socket);
             }
@@ -81,13 +142,85 @@ public class ClientTask {
     }
 
     /**
-     * Transmits a binary file payload (image, document, audio) to the target peer.
-     *
-     * @param targetIp Target peer IP
-     * @param targetPort Target port
-     * @param fileName Name of the file
-     * @param fileBytes Raw byte array of the file
-     * @param listener Callback listener
+     * Transmits a file by streaming directly from disk (handles files of any size without OOM).
+     */
+    public static void sendFile(String targetIp, int targetPort, String fileName, File file, OnSendListener listener) {
+        if (targetIp == null || targetIp.trim().isEmpty()) {
+            if (listener != null) listener.onFailure("Invalid target IP address.");
+            return;
+        }
+
+        if (file == null || !file.exists() || file.length() == 0) {
+            if (listener != null) listener.onFailure("Invalid or empty file.");
+            return;
+        }
+
+        executor.execute(() -> {
+            Socket socket = null;
+            DataOutputStream dos = null;
+            java.io.DataInputStream dis = null;
+            FileInputStream fis = null;
+            try {
+                long fileSize = file.length();
+                Log.d(TAG, "Connecting to " + targetIp + ":" + targetPort + " to stream file: " + fileName + " (" + fileSize + " bytes)");
+
+                socket = new Socket();
+                socket.bind(null);
+                socket.connect(new InetSocketAddress(targetIp.trim(), targetPort), SOCKET_TIMEOUT_MS);
+
+                dos = new DataOutputStream(socket.getOutputStream());
+                dis = new java.io.DataInputStream(socket.getInputStream());
+
+                byte[] nameBytes = (fileName != null ? fileName : file.getName()).getBytes(StandardCharsets.UTF_8);
+
+                // Protocol: TYPE_FILE (0x02) + Filename Length (short) + Filename + File Size (long) + Stream
+                dos.writeByte(ServerThread.TYPE_FILE);
+                dos.writeShort(nameBytes.length);
+                dos.write(nameBytes);
+                dos.writeLong(fileSize);
+
+                fis = new FileInputStream(file);
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                long totalSent = 0;
+                while ((bytesRead = fis.read(buffer)) != -1) {
+                    dos.write(buffer, 0, bytesRead);
+                    totalSent += bytesRead;
+                }
+                dos.flush();
+
+                // Signal clean EOF on TCP channel
+                try {
+                    socket.shutdownOutput();
+                } catch (IOException ignored) {}
+
+                // Wait for receiver ACK confirmation
+                try {
+                    byte ack = dis.readByte();
+                    Log.d(TAG, "File delivery ACK received: " + ack);
+                } catch (Exception ignored) {}
+
+                Log.d(TAG, "File streaming transmission completed: " + fileName + " (" + totalSent + " bytes)");
+                mainHandler.post(() -> {
+                    if (listener != null) listener.onSuccess();
+                });
+
+            } catch (IOException e) {
+                Log.e(TAG, "Error streaming file to " + targetIp + ":" + targetPort, e);
+                mainHandler.post(() -> {
+                    if (listener != null) listener.onFailure("File transfer failed: " + e.getMessage());
+                });
+            } finally {
+                closeQuietly(fis);
+                closeQuietly(dis);
+                closeQuietly(dos);
+                closeQuietly(socket);
+            }
+        });
+    }
+
+    /**
+     * Transmits a binary byte array payload to the target peer (backward compatibility).
      */
     public static void sendFile(String targetIp, int targetPort, String fileName, byte[] fileBytes, OnSendListener listener) {
         if (targetIp == null || targetIp.trim().isEmpty()) {
@@ -103,6 +236,7 @@ public class ClientTask {
         executor.execute(() -> {
             Socket socket = null;
             DataOutputStream dos = null;
+            java.io.DataInputStream dis = null;
             try {
                 Log.d(TAG, "Connecting to " + targetIp + ":" + targetPort + " to send file: " + fileName);
                 socket = new Socket();
@@ -110,15 +244,25 @@ public class ClientTask {
                 socket.connect(new InetSocketAddress(targetIp.trim(), targetPort), SOCKET_TIMEOUT_MS);
 
                 dos = new DataOutputStream(socket.getOutputStream());
+                dis = new java.io.DataInputStream(socket.getInputStream());
+
                 byte[] nameBytes = (fileName != null ? fileName : "attachment.dat").getBytes(StandardCharsets.UTF_8);
 
-                // Header Protocol: TYPE_FILE (0x02) + Filename Length (short) + Filename + File Size (long) + Raw Bytes
                 dos.writeByte(ServerThread.TYPE_FILE);
                 dos.writeShort(nameBytes.length);
                 dos.write(nameBytes);
                 dos.writeLong(fileBytes.length);
                 dos.write(fileBytes);
                 dos.flush();
+
+                try {
+                    socket.shutdownOutput();
+                } catch (IOException ignored) {}
+
+                try {
+                    byte ack = dis.readByte();
+                    Log.d(TAG, "File ACK received: " + ack);
+                } catch (Exception ignored) {}
 
                 Log.d(TAG, "File transmission completed: " + fileName + " (" + fileBytes.length + " bytes)");
                 mainHandler.post(() -> {
@@ -131,6 +275,7 @@ public class ClientTask {
                     if (listener != null) listener.onFailure("File transfer failed: " + e.getMessage());
                 });
             } finally {
+                closeQuietly(dis);
                 closeQuietly(dos);
                 closeQuietly(socket);
             }

@@ -254,7 +254,11 @@ public class DeviceListActivity extends AppCompatActivity
 
     @Override
     public void onConnectionSuccess(WifiP2pInfo info, String groupOwnerAddress, boolean isGroupOwner) {
-        Toast.makeText(this, "Wi-Fi Direct connected! IP: " + groupOwnerAddress, Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "Wi-Fi Direct connected! Role: " + (isGroupOwner ? "Group Owner" : "Client"), Toast.LENGTH_LONG).show();
+
+        // If this device is Group Owner, groupOwnerAddress is our own IP (192.168.49.1).
+        // Peer IP is unknown until the client registers via handshake.
+        String peerIp = isGroupOwner ? null : groupOwnerAddress;
 
         DeviceItem target = connectingDevice != null ? connectingDevice : new DeviceItem(
                 "p2p-node",
@@ -265,7 +269,7 @@ public class DeviceListActivity extends AppCompatActivity
                 true
         );
 
-        openChatScreen(target, groupOwnerAddress, isGroupOwner);
+        openChatScreen(target, peerIp, isGroupOwner);
     }
 
     @Override
