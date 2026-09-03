@@ -17,6 +17,7 @@ public class P2PSocketManager {
     public interface SocketEventListener {
         void onHandshakeReceived(String peerName, String senderIp);
         void onMessageReceived(String messageText, String senderIp);
+        void onGroupMessageReceived(String groupId, String groupName, String senderName, String messageText, String senderIp);
         void onFileReceived(File savedFile, String fileName, long fileSize, String senderIp);
         void onCallSignalingReceived(byte callSignal, String callerName, String callType, String senderIp);
         void onMessageSent(String messageText);
@@ -59,6 +60,14 @@ public class P2PSocketManager {
                 Log.d(TAG, "P2PSocketManager received message from " + senderIp);
                 if (eventListener != null) {
                     eventListener.onMessageReceived(messageText, senderIp);
+                }
+            }
+
+            @Override
+            public void onGroupMessageReceived(String groupId, String groupName, String senderName, String messageText, String senderIp) {
+                Log.d(TAG, "P2PSocketManager received group message for [" + groupName + "] from " + senderName + " (" + senderIp + ")");
+                if (eventListener != null) {
+                    eventListener.onGroupMessageReceived(groupId, groupName, senderName, messageText, senderIp);
                 }
             }
 
@@ -144,6 +153,27 @@ public class P2PSocketManager {
                 Log.w(TAG, "Handshake attempt failed: " + errorMessage);
                 if (eventListener != null) {
                     eventListener.onNetworkError("Handshake notice: " + errorMessage);
+                }
+            }
+        });
+    }
+
+    /**
+     * Sends an offline group message to a target peer or Group Owner.
+     */
+    public void sendGroupMessage(String targetIp, String groupId, String groupName, String senderName, String messageText) {
+        ClientTask.sendGroupMessage(targetIp, this.port, groupId, groupName, senderName, messageText, new ClientTask.OnSendListener() {
+            @Override
+            public void onSuccess() {
+                if (eventListener != null) {
+                    eventListener.onMessageSent(messageText);
+                }
+            }
+
+            @Override
+            public void onFailure(String errorMessage) {
+                if (eventListener != null) {
+                    eventListener.onNetworkError("Group send failed: " + errorMessage);
                 }
             }
         });

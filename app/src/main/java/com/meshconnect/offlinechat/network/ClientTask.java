@@ -165,6 +165,70 @@ public class ClientTask {
     }
 
     /**
+     * Transmits an offline group message payload to the target peer or Group Owner.
+     */
+    public static void sendGroupMessage(String targetIp, int targetPort, String groupId, String groupName, String senderName, String messageText, OnSendListener listener) {
+        if (targetIp == null || targetIp.trim().isEmpty()) {
+            if (listener != null) listener.onFailure("Invalid target IP address.");
+            return;
+        }
+
+        executor.execute(() -> {
+            Socket socket = null;
+            DataOutputStream dos = null;
+            java.io.DataInputStream dis = null;
+            try {
+                Log.d(TAG, "Sending group message to " + targetIp + ":" + targetPort + " for group [" + groupName + "]");
+                socket = new Socket();
+                socket.bind(null);
+                socket.connect(new InetSocketAddress(targetIp.trim(), targetPort), SOCKET_TIMEOUT_MS);
+
+                dos = new DataOutputStream(socket.getOutputStream());
+                dis = new java.io.DataInputStream(socket.getInputStream());
+
+                byte[] gIdBytes = (groupId != null ? groupId : "").getBytes(StandardCharsets.UTF_8);
+                byte[] gNameBytes = (groupName != null ? groupName : "Group").getBytes(StandardCharsets.UTF_8);
+                byte[] sNameBytes = (senderName != null ? senderName : "Me").getBytes(StandardCharsets.UTF_8);
+                byte[] textBytes = (messageText != null ? messageText : "").getBytes(StandardCharsets.UTF_8);
+
+                dos.writeByte(ServerThread.TYPE_GROUP_MESSAGE);
+                dos.writeShort(gIdBytes.length);
+                dos.write(gIdBytes);
+                dos.writeShort(gNameBytes.length);
+                dos.write(gNameBytes);
+                dos.writeShort(sNameBytes.length);
+                dos.write(sNameBytes);
+                dos.writeInt(textBytes.length);
+                dos.write(textBytes);
+                dos.flush();
+
+                // Wait for ACK
+                socket.setSoTimeout(3000);
+                try {
+                    byte ack = dis.readByte();
+                    if (ack == ServerThread.TYPE_ACK) {
+                        Log.d(TAG, "Group message transmission verified by ACK from " + targetIp);
+                    }
+                } catch (Exception ignored) {}
+
+                mainHandler.post(() -> {
+                    if (listener != null) listener.onSuccess();
+                });
+
+            } catch (IOException e) {
+                Log.e(TAG, "Error sending group message to " + targetIp + ":" + targetPort, e);
+                mainHandler.post(() -> {
+                    if (listener != null) listener.onFailure("Group send failed: " + e.getMessage());
+                });
+            } finally {
+                closeQuietly(dis);
+                closeQuietly(dos);
+                closeQuietly(socket);
+            }
+        });
+    }
+
+    /**
      * Transmits a UTF-8 text message payload to the target peer.
      */
     public static void sendText(String targetIp, int targetPort, String messageText, OnSendListener listener) {

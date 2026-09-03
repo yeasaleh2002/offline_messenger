@@ -25,6 +25,7 @@ public class ServerThread extends Thread {
     public static final byte TYPE_TEXT = 0x01;
     public static final byte TYPE_FILE = 0x02;
     public static final byte TYPE_HANDSHAKE = 0x03;
+    public static final byte TYPE_GROUP_MESSAGE = 0x04;
     public static final byte TYPE_CALL_INVITE = 0x05;
     public static final byte TYPE_ACK = 0x06;
     public static final byte TYPE_CALL_ACCEPT = 0x07;
@@ -34,6 +35,7 @@ public class ServerThread extends Thread {
     public interface OnMessageReceivedListener {
         void onHandshakeReceived(String peerName, String senderIp);
         void onMessageReceived(String messageText, String senderIp);
+        void onGroupMessageReceived(String groupId, String groupName, String senderName, String messageText, String senderIp);
         void onFileReceived(File savedFile, String fileName, long fileSize, String senderIp);
         void onCallSignalingReceived(byte callSignal, String callerName, String callType, String senderIp);
         void onServerError(String errorMessage);
@@ -113,6 +115,42 @@ public class ServerThread extends Thread {
                         mainHandler.post(() -> {
                             if (listener != null) {
                                 listener.onCallSignalingReceived(signal, "", "", clientIp);
+                            }
+                        });
+
+                    } else if (packetType == TYPE_GROUP_MESSAGE) {
+                        // Read Group Message Packet
+                        short gIdLen = dis.readShort();
+                        byte[] gIdBytes = new byte[gIdLen];
+                        dis.readFully(gIdBytes);
+                        String groupId = new String(gIdBytes, StandardCharsets.UTF_8);
+
+                        short gNameLen = dis.readShort();
+                        byte[] gNameBytes = new byte[gNameLen];
+                        dis.readFully(gNameBytes);
+                        String groupName = new String(gNameBytes, StandardCharsets.UTF_8);
+
+                        short sNameLen = dis.readShort();
+                        byte[] sNameBytes = new byte[sNameLen];
+                        dis.readFully(sNameBytes);
+                        String senderName = new String(sNameBytes, StandardCharsets.UTF_8);
+
+                        int textLen = dis.readInt();
+                        byte[] textBytes = new byte[textLen];
+                        dis.readFully(textBytes);
+                        String groupMessage = new String(textBytes, StandardCharsets.UTF_8);
+
+                        Log.d(TAG, "Received group message for [" + groupName + "] from " + senderName + " (" + clientIp + "): " + groupMessage);
+
+                        // Send back ACK
+                        try {
+                            dos.writeByte(TYPE_ACK);
+                            dos.flush();
+                        } catch (IOException ignored) {}
+
+                        mainHandler.post(() -> {
+                            if (listener != null) {
+                                listener.onGroupMessageReceived(groupId, groupName, senderName, groupMessage, clientIp);
                             }
                         });
 

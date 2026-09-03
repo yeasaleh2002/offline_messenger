@@ -272,6 +272,7 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
 
     @Override public void onHandshakeReceived(String peerName, String senderIp) {}
     @Override public void onMessageReceived(String messageText, String senderIp) {}
+    @Override public void onGroupMessageReceived(String groupId, String groupName, String senderName, String messageText, String senderIp) {}
     @Override public void onFileReceived(File savedFile, String fileName, long fileSize, String senderIp) {}
     @Override public void onMessageSent(String messageText) {}
     @Override public void onFileSent(String fileName) {}

@@ -637,6 +637,15 @@ public class ChatActivity extends AppCompatActivity
     }
 
     @Override
+    public void onGroupMessageReceived(String groupId, String groupName, String senderName, String messageText, String senderIp) {
+        Log.d(TAG, "Group message received for " + groupName + " from " + senderName);
+        ChatMessage groupMsg = new ChatMessage(senderIp, senderName, groupId, messageText, false);
+        groupMsg.setStatus(ChatMessage.MessageStatus.DELIVERED);
+        dbHelper.insertGroupMessage(groupMsg, groupId);
+        Toast.makeText(this, "[" + groupName + "] " + senderName + ": " + messageText, Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
     public void onCallSignalingReceived(byte callSignal, String callerName, String callType, String senderIp) {
         if (callSignal == ServerThread.TYPE_CALL_INVITE) {
             Log.d(TAG, "Incoming call request received from " + callerName + " (" + senderIp + "), type: " + callType);

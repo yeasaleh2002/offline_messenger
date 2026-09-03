@@ -146,4 +146,57 @@ public class ProtocolTest {
         assertEquals(0x08, ServerThread.TYPE_CALL_DECLINE);
         assertEquals(0x09, ServerThread.TYPE_CALL_END);
     }
+
+    @Test
+    public void testGroupMessagePacketProtocol() throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        DataOutputStream dos = new DataOutputStream(baos);
+
+        String groupId = "GRP-882199";
+        String groupName = "Emergency Squad";
+        String senderName = "Bob";
+        String messageText = "Team meeting at sector 4 in 10 mins.";
+
+        byte[] gIdBytes = groupId.getBytes(StandardCharsets.UTF_8);
+        byte[] gNameBytes = groupName.getBytes(StandardCharsets.UTF_8);
+        byte[] sNameBytes = senderName.getBytes(StandardCharsets.UTF_8);
+        byte[] textBytes = messageText.getBytes(StandardCharsets.UTF_8);
+
+        // Group Message format: TYPE_GROUP_MESSAGE (0x04) + Short gIdLen + gId + Short gNameLen + gName + Short sNameLen + sName + Int textLen + text
+        dos.writeByte(ServerThread.TYPE_GROUP_MESSAGE);
+        dos.writeShort(gIdBytes.length);
+        dos.write(gIdBytes);
+        dos.writeShort(gNameBytes.length);
+        dos.write(gNameBytes);
+        dos.writeShort(sNameBytes.length);
+        dos.write(sNameBytes);
+        dos.writeInt(textBytes.length);
+        dos.write(textBytes);
+        dos.flush();
+
+        // Read and verify
+        DataInputStream dis = new DataInputStream(new ByteArrayInputStream(baos.toByteArray()));
+        byte packetType = dis.readByte();
+        assertEquals(ServerThread.TYPE_GROUP_MESSAGE, packetType);
+
+        short readGIdLen = dis.readShort();
+        byte[] readGIdBytes = new byte[readGIdLen];
+        dis.readFully(readGIdBytes);
+        assertEquals(groupId, new String(readGIdBytes, StandardCharsets.UTF_8));
+
+        short readGNameLen = dis.readShort();
+        byte[] readGNameBytes = new byte[readGNameLen];
+        dis.readFully(readGNameBytes);
+        assertEquals(groupName, new String(readGNameBytes, StandardCharsets.UTF_8));
+
+        short readSNameLen = dis.readShort();
+        byte[] readSNameBytes = new byte[readSNameLen];
+        dis.readFully(readSNameBytes);
+        assertEquals(senderName, new String(readSNameBytes, StandardCharsets.UTF_8));
+
+        int readTextLen = dis.readInt();
+        byte[] readTextBytes = new byte[readTextLen];
+        dis.readFully(readTextBytes);
+        assertEquals(messageText, new String(readTextBytes, StandardCharsets.UTF_8));
+    }
 }

@@ -74,4 +74,17 @@ public class ChatMessageTest {
         assertEquals("[Voice Note]", audioMsg.getMessageText());
         assertEquals("voice_note.m4a", audioMsg.getFileName());
     }
+
+    @Test
+    public void testGroupModelCreation() {
+        com.meshconnect.offlinechat.model.GroupModel group = new com.meshconnect.offlinechat.model.GroupModel(
+                "GRP-TEST-123", "Survival Team", "Alice", 1700000000000L, 5
+        );
+
+        assertEquals("GRP-TEST-123", group.getId());
+        assertEquals("Survival Team", group.getName());
+        assertEquals("Alice", group.getCreatedBy());
+        assertEquals(1700000000000L, group.getCreatedAt());
+        assertEquals(5, group.getMemberCount());
+    }
 }

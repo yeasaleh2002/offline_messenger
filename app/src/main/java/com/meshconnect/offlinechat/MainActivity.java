@@ -10,11 +10,13 @@ import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
+import com.meshconnect.offlinechat.db.ChatDatabaseHelper;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,8 +29,12 @@ public class MainActivity extends AppCompatActivity {
 
     private MaterialCardView cardScanDevices;
     private MaterialCardView cardChatHistory;
+    private MaterialCardView cardGroupChats;
+    private MaterialCardView cardClearData;
     private MaterialButton btnScanDevices;
     private MaterialButton btnChatHistory;
+    private MaterialButton btnGroupChats;
+    private MaterialButton btnClearData;
     private TextView tvMeshStatus;
     private TextView tvMyNodeId;
 
@@ -49,8 +55,12 @@ public class MainActivity extends AppCompatActivity {
     private void initViews() {
         cardScanDevices = findViewById(R.id.cardScanDevices);
         cardChatHistory = findViewById(R.id.cardChatHistory);
+        cardGroupChats = findViewById(R.id.cardGroupChats);
+        cardClearData = findViewById(R.id.cardClearData);
         btnScanDevices = findViewById(R.id.btnScanDevices);
         btnChatHistory = findViewById(R.id.btnChatHistory);
+        btnGroupChats = findViewById(R.id.btnGroupChats);
+        btnClearData = findViewById(R.id.btnClearData);
         tvMeshStatus = findViewById(R.id.tvMeshStatus);
         tvMyNodeId = findViewById(R.id.tvMyNodeId);
     }
@@ -130,6 +140,14 @@ public class MainActivity extends AppCompatActivity {
         // Navigation: Chat History
         cardChatHistory.setOnClickListener(v -> navigateToChatHistory());
         btnChatHistory.setOnClickListener(v -> navigateToChatHistory());
+
+        // Navigation: Offline Groups
+        cardGroupChats.setOnClickListener(v -> navigateToGroups());
+        btnGroupChats.setOnClickListener(v -> navigateToGroups());
+
+        // Privacy & Storage: Delete All Data
+        cardClearData.setOnClickListener(v -> confirmDeleteAllData());
+        btnClearData.setOnClickListener(v -> confirmDeleteAllData());
     }
 
     private void navigateToDeviceScan() {
@@ -143,5 +161,27 @@ public class MainActivity extends AppCompatActivity {
         Intent intent = new Intent(MainActivity.this, DeviceListActivity.class);
         intent.putExtra("MODE", "HISTORY");
         startActivity(intent);
+    }
+
+    private void navigateToGroups() {
+        Intent intent = new Intent(MainActivity.this, GroupListActivity.class);
+        startActivity(intent);
+    }
+
+    private void confirmDeleteAllData() {
+        new AlertDialog.Builder(this)
+                .setTitle("Delete All Data & Storage?")
+                .setMessage("This will permanently wipe all messages, contacts, offline groups, voice notes, and downloaded files from your device storage.\n\nThis action cannot be undone.")
+                .setIcon(R.drawable.ic_delete_forever_24)
+                .setPositiveButton("Delete Everything", (dialog, which) -> {
+                    boolean success = ChatDatabaseHelper.getInstance(this).clearAllData(this);
+                    if (success) {
+                        Toast.makeText(this, "All local data and storage wiped successfully.", Toast.LENGTH_LONG).show();
+                    } else {
+                        Toast.makeText(this, "Failed to completely clear storage.", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Cancel", (dialog, which) -> dialog.dismiss())
+                .show();
     }
 }

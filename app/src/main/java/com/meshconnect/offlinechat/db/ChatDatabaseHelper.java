@@ -11,7 +11,9 @@ import androidx.annotation.Nullable;
 
 import com.meshconnect.offlinechat.model.ChatMessage;
 import com.meshconnect.offlinechat.model.DeviceItem;
+import com.meshconnect.offlinechat.model.GroupModel;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -23,13 +25,20 @@ public class ChatDatabaseHelper extends SQLiteOpenHelper {
     private static final String TAG = "ChatDatabaseHelper";
 
     private static final String DATABASE_NAME = "mesh_chat.db";
-    private static final int DATABASE_VERSION = 2;
+    private static final int DATABASE_VERSION = 3;
 
     // Table: contacts
     public static final String TABLE_CONTACTS = "contacts";
     public static final String COLUMN_CONTACT_ID = "id";
     public static final String COLUMN_DEVICE_NAME = "device_name";
     public static final String COLUMN_MAC_ADDRESS = "mac_address";
+
+    // Table: groups
+    public static final String TABLE_GROUPS = "groups_table";
+    public static final String COLUMN_GROUP_ID = "id";
+    public static final String COLUMN_GROUP_NAME = "name";
+    public static final String COLUMN_GROUP_CREATED_BY = "created_by";
+    public static final String COLUMN_GROUP_CREATED_AT = "created_at";
 
     // Table: messages
     public static final String TABLE_MESSAGES = "messages";
@@ -44,6 +53,7 @@ public class ChatDatabaseHelper extends SQLiteOpenHelper {
     public static final String COLUMN_FILE_PATH = "file_path";
     public static final String COLUMN_FILE_NAME = "file_name";
     public static final String COLUMN_FILE_SIZE = "file_size";
+    public static final String COLUMN_MSG_GROUP_ID = "group_id";
 
     // Singleton instance
     private static volatile ChatDatabaseHelper instance;
@@ -68,6 +78,14 @@ public class ChatDatabaseHelper extends SQLiteOpenHelper {
                 + COLUMN_MAC_ADDRESS + " TEXT NOT NULL UNIQUE"
                 + ");";
 
+        // Create groups table
+        String createGroupsTable = "CREATE TABLE " + TABLE_GROUPS + " ("
+                + COLUMN_GROUP_ID + " TEXT PRIMARY KEY, "
+                + COLUMN_GROUP_NAME + " TEXT NOT NULL, "
+                + COLUMN_GROUP_CREATED_BY + " TEXT, "
+                + COLUMN_GROUP_CREATED_AT + " INTEGER"
+                + ");";
+
         // Create messages table
         String createMessagesTable = "CREATE TABLE " + TABLE_MESSAGES + " ("
                 + COLUMN_MESSAGE_ID + " INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -81,16 +99,21 @@ public class ChatDatabaseHelper extends SQLiteOpenHelper {
                 + COLUMN_FILE_PATH + " TEXT, "
                 + COLUMN_FILE_NAME + " TEXT, "
                 + COLUMN_FILE_SIZE + " INTEGER DEFAULT 0, "
+                + COLUMN_MSG_GROUP_ID + " TEXT, "
                 + "FOREIGN KEY(" + COLUMN_CONTACT_MAC + ") REFERENCES " + TABLE_CONTACTS + "(" + COLUMN_MAC_ADDRESS + ")"
                 + ");";
 
         // Create indexes for efficient querying
         String createIndexMessageMac = "CREATE INDEX idx_messages_contact_mac ON "
                 + TABLE_MESSAGES + "(" + COLUMN_CONTACT_MAC + ");";
+        String createIndexMessageGroupId = "CREATE INDEX idx_messages_group_id ON "
+                + TABLE_MESSAGES + "(" + COLUMN_MSG_GROUP_ID + ");";
 
         db.execSQL(createContactsTable);
+        db.execSQL(createGroupsTable);
         db.execSQL(createMessagesTable);
         db.execSQL(createIndexMessageMac);
+        db.execSQL(createIndexMessageGroupId);
 
         Log.d(TAG, "Database tables created successfully.");
     }
@@ -105,7 +128,20 @@ public class ChatDatabaseHelper extends SQLiteOpenHelper {
                 db.execSQL("ALTER TABLE " + TABLE_MESSAGES + " ADD COLUMN " + COLUMN_FILE_NAME + " TEXT;");
                 db.execSQL("ALTER TABLE " + TABLE_MESSAGES + " ADD COLUMN " + COLUMN_FILE_SIZE + " INTEGER DEFAULT 0;");
             } catch (Exception e) {
-                Log.e(TAG, "Error altering messages table during onUpgrade", e);
+                Log.e(TAG, "Error altering messages table during onUpgrade v2", e);
+            }
+        }
+        if (oldVersion < 3) {
+            try {
+                db.execSQL("CREATE TABLE IF NOT EXISTS " + TABLE_GROUPS + " ("
+                        + COLUMN_GROUP_ID + " TEXT PRIMARY KEY, "
+                        + COLUMN_GROUP_NAME + " TEXT NOT NULL, "
+                        + COLUMN_GROUP_CREATED_BY + " TEXT, "
+                        + COLUMN_GROUP_CREATED_AT + " INTEGER);");
+                db.execSQL("ALTER TABLE " + TABLE_MESSAGES + " ADD COLUMN " + COLUMN_MSG_GROUP_ID + " TEXT;");
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_messages_group_id ON " + TABLE_MESSAGES + "(" + COLUMN_MSG_GROUP_ID + ");");
+            } catch (Exception e) {
+                Log.e(TAG, "Error altering messages table during onUpgrade v3", e);
             }
         }
     }
@@ -495,5 +531,190 @@ public class ChatDatabaseHelper extends SQLiteOpenHelper {
     public int clearAllMessages() {
         SQLiteDatabase db = this.getWritableDatabase();
         return db.delete(TABLE_MESSAGES, null, null);
+    }
+
+    // =========================================================================
+    // CRUD Operations: OFFLINE GROUPS
+    // =========================================================================
+
+    /**
+     * Creates or updates an offline chat group.
+     */
+    public long createGroup(String id, String name, String createdBy) {
+        if (id == null || name == null) return -1;
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put(COLUMN_GROUP_ID, id);
+        values.put(COLUMN_GROUP_NAME, name);
+        values.put(COLUMN_GROUP_CREATED_BY, createdBy != null ? createdBy : "Me");
+        values.put(COLUMN_GROUP_CREATED_AT, System.currentTimeMillis());
+
+        return db.insertWithOnConflict(TABLE_GROUPS, null, values, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    /**
+     * Retrieves all saved offline chat groups.
+     */
+    public List<GroupModel> getAllGroups() {
+        List<GroupModel> groups = new ArrayList<>();
+        SQLiteDatabase db = this.getReadableDatabase();
+        String selectQuery = "SELECT * FROM " + TABLE_GROUPS + " ORDER BY " + COLUMN_GROUP_CREATED_AT + " DESC";
+        Cursor cursor = null;
+
+        try {
+            cursor = db.rawQuery(selectQuery, null);
+            if (cursor != null && cursor.moveToFirst()) {
+                int idIdx = cursor.getColumnIndexOrThrow(COLUMN_GROUP_ID);
+                int nameIdx = cursor.getColumnIndexOrThrow(COLUMN_GROUP_NAME);
+                int authorIdx = cursor.getColumnIndexOrThrow(COLUMN_GROUP_CREATED_BY);
+                int timeIdx = cursor.getColumnIndexOrThrow(COLUMN_GROUP_CREATED_AT);
+
+                do {
+                    String id = cursor.getString(idIdx);
+                    String name = cursor.getString(nameIdx);
+                    String author = cursor.getString(authorIdx);
+                    long time = cursor.getLong(timeIdx);
+
+                    groups.add(new GroupModel(id, name, author, time));
+                } while (cursor.moveToNext());
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error fetching groups", e);
+        } finally {
+            if (cursor != null) cursor.close();
+        }
+
+        return groups;
+    }
+
+    /**
+     * Inserts a message belonging to an offline group.
+     */
+    public long insertGroupMessage(ChatMessage message, String groupId) {
+        if (message == null || groupId == null) return -1;
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+
+        values.put(COLUMN_SENDER, message.getSenderName());
+        values.put(COLUMN_MESSAGE_TEXT, message.getMessageText());
+        values.put(COLUMN_TIMESTAMP, message.getTimestamp());
+        values.put(COLUMN_STATUS, message.getStatus().name());
+        values.put(COLUMN_CONTACT_MAC, "GROUP_" + groupId);
+        values.put(COLUMN_IS_SENT_BY_ME, message.isSentByMe() ? 1 : 0);
+        values.put(COLUMN_MESSAGE_TYPE, message.getMessageType().name());
+        values.put(COLUMN_FILE_PATH, message.getFilePath());
+        values.put(COLUMN_FILE_NAME, message.getFileName());
+        values.put(COLUMN_FILE_SIZE, message.getFileSize());
+        values.put(COLUMN_MSG_GROUP_ID, groupId);
+
+        return db.insert(TABLE_MESSAGES, null, values);
+    }
+
+    /**
+     * Retrieves all messages for a specific group.
+     */
+    public List<ChatMessage> getMessagesForGroup(String groupId) {
+        List<ChatMessage> messages = new ArrayList<>();
+        if (groupId == null) return messages;
+
+        SQLiteDatabase db = this.getReadableDatabase();
+        String selectQuery = "SELECT * FROM " + TABLE_MESSAGES + " WHERE "
+                + COLUMN_MSG_GROUP_ID + " = ? OR " + COLUMN_CONTACT_MAC + " = ? ORDER BY " + COLUMN_MESSAGE_ID + " ASC";
+        Cursor cursor = null;
+
+        try {
+            cursor = db.rawQuery(selectQuery, new String[]{groupId, "GROUP_" + groupId});
+            if (cursor != null && cursor.moveToFirst()) {
+                int idIdx = cursor.getColumnIndexOrThrow(COLUMN_MESSAGE_ID);
+                int senderIdx = cursor.getColumnIndexOrThrow(COLUMN_SENDER);
+                int textIdx = cursor.getColumnIndexOrThrow(COLUMN_MESSAGE_TEXT);
+                int timeIdx = cursor.getColumnIndexOrThrow(COLUMN_TIMESTAMP);
+                int statusIdx = cursor.getColumnIndexOrThrow(COLUMN_STATUS);
+                int isSentIdx = cursor.getColumnIndexOrThrow(COLUMN_IS_SENT_BY_ME);
+                int typeIdx = cursor.getColumnIndexOrThrow(COLUMN_MESSAGE_TYPE);
+                int filePathIdx = cursor.getColumnIndexOrThrow(COLUMN_FILE_PATH);
+                int fileNameIdx = cursor.getColumnIndexOrThrow(COLUMN_FILE_NAME);
+                int fileSizeIdx = cursor.getColumnIndexOrThrow(COLUMN_FILE_SIZE);
+
+                do {
+                    long id = cursor.getLong(idIdx);
+                    String sender = cursor.getString(senderIdx);
+                    String text = cursor.getString(textIdx);
+                    String time = cursor.getString(timeIdx);
+                    String statusStr = cursor.getString(statusIdx);
+                    boolean isSent = cursor.getInt(isSentIdx) == 1;
+                    String typeStr = cursor.getString(typeIdx);
+                    String filePath = cursor.getString(filePathIdx);
+                    String fileName = cursor.getString(fileNameIdx);
+                    long fileSize = cursor.getLong(fileSizeIdx);
+
+                    ChatMessage.MessageType type = ChatMessage.MessageType.TEXT;
+                    try { if (typeStr != null) type = ChatMessage.MessageType.valueOf(typeStr); } catch (Exception ignored) {}
+
+                    ChatMessage.MessageStatus status = ChatMessage.MessageStatus.DELIVERED;
+                    try { if (statusStr != null) status = ChatMessage.MessageStatus.valueOf(statusStr); } catch (Exception ignored) {}
+
+                    ChatMessage msg = new ChatMessage(
+                            id, sender, groupId, text, time, status, type, filePath, fileName, fileSize, isSent
+                    );
+                    messages.add(msg);
+                } while (cursor.moveToNext());
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error fetching messages for group " + groupId, e);
+        } finally {
+            if (cursor != null) cursor.close();
+        }
+
+        return messages;
+    }
+
+    // =========================================================================
+    // DATA WIPE & STORAGE CLEANUP
+    // =========================================================================
+
+    /**
+     * Completely wipes all SQLite database records and permanently deletes all
+     * stored files (voice notes, received attachments, sent cache, downloads).
+     */
+    public boolean clearAllData(Context context) {
+        try {
+            SQLiteDatabase db = this.getWritableDatabase();
+            db.delete(TABLE_MESSAGES, null, null);
+            db.delete(TABLE_CONTACTS, null, null);
+            db.delete(TABLE_GROUPS, null, null);
+            Log.d(TAG, "All database tables cleared.");
+
+            if (context != null) {
+                // 1. Clear internal directories
+                deleteDirectoryRecursively(new File(context.getFilesDir(), "received_files"));
+                deleteDirectoryRecursively(new File(context.getFilesDir(), "sent_files"));
+                deleteDirectoryRecursively(new File(context.getFilesDir(), "voice_notes"));
+
+                // 2. Clear external download directory
+                File extDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS);
+                if (extDir != null) {
+                    deleteDirectoryRecursively(new File(extDir, "MeshConnect"));
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            Log.e(TAG, "Error while clearing all data and storage", e);
+            return false;
+        }
+    }
+
+    private static void deleteDirectoryRecursively(File fileOrDir) {
+        if (fileOrDir != null && fileOrDir.exists()) {
+            if (fileOrDir.isDirectory()) {
+                File[] children = fileOrDir.listFiles();
+                if (children != null) {
+                    for (File child : children) {
+                        deleteDirectoryRecursively(child);
+                    }
+                }
+            }
+            fileOrDir.delete();
+        }
     }
 }
