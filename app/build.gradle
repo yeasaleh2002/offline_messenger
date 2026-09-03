@@ -29,6 +29,15 @@ android {
     buildFeatures {
         viewBinding = true
     }
+    sourceSets {
+        main {
+            java.srcDirs = ['src/main/java']
+            res.srcDirs = ['src/main/res']
+        }
+        test {
+            java.srcDirs = ['src/test/java']
+        }
+    }
 }
 
 dependencies {
