@@ -268,8 +268,22 @@ public class ChatDatabaseHelper extends SQLiteOpenHelper {
         SQLiteDatabase db = this.getWritableDatabase();
 
         // Also delete associated messages
-        db.delete(TABLE_MESSAGES, COLUMN_CONTACT_MAC + " = ?", new String[]{macAddress.trim()});
-        return db.delete(TABLE_CONTACTS, COLUMN_MAC_ADDRESS + " = ?", new String[]{macAddress.trim()});
+        db.delete(TABLE_MESSAGES, COLUMN_CONTACT_MAC + " = ?", new String[]{macAddress});
+        return db.delete(TABLE_CONTACTS, COLUMN_MAC_ADDRESS + " = ?", new String[]{macAddress});
+    }
+
+    /**
+     * Purges legacy mock/dummy devices from the contacts table.
+     */
+    public void deleteDummyContacts() {
+        try {
+            deleteContact("44:2A:60:88:91:02");
+            deleteContact("7A:99:C2:55:10:44");
+            SQLiteDatabase db = this.getWritableDatabase();
+            db.delete(TABLE_CONTACTS, COLUMN_DEVICE_NAME + " LIKE '%Pixel 8%' OR " + COLUMN_DEVICE_NAME + " LIKE '%Samsung%'", null);
+        } catch (Exception e) {
+            Log.w(TAG, "Error cleaning dummy contacts", e);
+        }
     }
 
     // =========================================================================

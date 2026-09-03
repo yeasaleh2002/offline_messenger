@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -60,6 +61,14 @@ public class MainActivity extends AppCompatActivity implements P2PSocketManager.
         P2PSocketManager socketManager = P2PSocketManager.getInstance(this);
         socketManager.registerListener(this);
         socketManager.startServer();
+
+        // Start background service to maintain socket and wake screen for incoming calls
+        try {
+            Intent serviceIntent = new Intent(this, com.meshconnect.offlinechat.service.MeshForegroundService.class);
+            androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent);
+        } catch (Exception e) {
+            Log.e("MainActivity", "Failed to start MeshForegroundService", e);
+        }
     }
 
     private void initViews() {
@@ -129,11 +138,15 @@ public class MainActivity extends AppCompatActivity implements P2PSocketManager.
             permissionsNeeded.add(Manifest.permission.ACCESS_FINE_LOCATION);
         }
 
-        // Android 13+ Wi-Fi direct permission
+        // Android 13+ Wi-Fi direct and Notifications permissions
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.NEARBY_WIFI_DEVICES)
                     != PackageManager.PERMISSION_GRANTED) {
                 permissionsNeeded.add(Manifest.permission.NEARBY_WIFI_DEVICES);
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                permissionsNeeded.add(Manifest.permission.POST_NOTIFICATIONS);
             }
         }
 

@@ -44,6 +44,14 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
+    <!-- Background Wake & Incoming Call Notification Permissions -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- Hardware Feature Requirements -->
     <uses-feature
         android:name="android.hardware.bluetooth"
@@ -68,6 +76,13 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.MeshConnect">
+
+        <!-- Background Mesh Foreground Service for Lock Screen / Background Call Reception -->
+        <service
+            android:name=".service.MeshForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
 
         <!-- FileProvider for secure file sharing & opening with external viewers -->
         <provider
@@ -105,11 +120,14 @@
             android:parentActivityName=".DeviceListActivity"
             android:windowSoftInputMode="adjustResize" />
 
-        <!-- Real-time Offline Call Activity (Audio & Video VoIP) -->
+        <!-- Real-time Offline Call Activity (Audio & Video VoIP, shows over lock screen & turns screen on) -->
         <activity
             android:name=".CallActivity"
             android:exported="false"
             android:screenOrientation="portrait"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:showOnLockScreen="true"
             android:windowSoftInputMode="stateAlwaysHidden" />
 
         <!-- Offline Groups List Activity -->

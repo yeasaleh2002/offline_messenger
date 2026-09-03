@@ -3,13 +3,22 @@ package com.meshconnect.offlinechat;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.app.KeyguardManager;
+import android.app.NotificationManager;
+import android.content.Context;
+import android.media.Ringtone;
+import android.media.RingtoneManager;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.os.Vibrator;
 import android.util.Log;
 import android.view.SurfaceView;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -67,6 +76,9 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
     private boolean isSpeakerOn = true;
     private boolean isCallActive = false;
 
+    private Ringtone ringtone;
+    private Vibrator vibrator;
+
     private final Handler timerHandler = new Handler(Looper.getMainLooper());
     private long callStartTime = 0;
 
@@ -96,6 +108,23 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // Wake up screen and show over keyguard/lockscreen
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true);
+            setTurnScreenOn(true);
+            KeyguardManager km = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+            if (km != null) {
+                km.requestDismissKeyguard(this, null);
+            }
+        } else {
+            getWindow().addFlags(
+                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                    WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD |
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
+                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+            );
+        }
+
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_call);
 
@@ -192,6 +221,41 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
         layoutIncomingActions.setVisibility(View.VISIBLE);
         layoutControls.setVisibility(View.GONE);
         tvCallStatus.setText("Incoming " + callType + " Call...");
+        startRinging();
+    }
+
+    private void startRinging() {
+        try {
+            Uri alert = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+            ringtone = RingtoneManager.getRingtone(this, alert);
+            if (ringtone != null) {
+                ringtone.play();
+            }
+            vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+            if (vibrator != null && vibrator.hasVibrator()) {
+                long[] pattern = {0, 1000, 800, 1000, 800};
+                vibrator.vibrate(pattern, 1);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Error starting ringtone", e);
+        }
+    }
+
+    private void stopRinging() {
+        try {
+            if (ringtone != null && ringtone.isPlaying()) {
+                ringtone.stop();
+                ringtone = null;
+            }
+            if (vibrator != null) {
+                vibrator.cancel();
+                vibrator = null;
+            }
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) {
+                nm.cancel(1002);
+            }
+        } catch (Exception ignored) {}
     }
 
     private void acceptCall() {
@@ -213,6 +277,7 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
         layoutIncomingActions.setVisibility(View.GONE);
         layoutControls.setVisibility(View.VISIBLE);
         timerHandler.removeCallbacks(ringTimeoutRunnable);
+        stopRinging();
 
         if (peerIp != null) {
             socketManager.sendCallSignal(peerIp, ServerThread.TYPE_CALL_ACCEPT);
@@ -272,7 +337,7 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
             ivRemoteVideo.setVisibility(View.VISIBLE);
             layoutAudioAvatar.setVisibility(View.GONE);
 
-            videoEngine = new VideoCallEngine(this, peerIp, !isIncoming, bitmap -> {
+            videoEngine = new VideoCallEngine(this, peerIp, bitmap -> {
                 if (ivRemoteVideo != null && bitmap != null) {
                     if (ivRemoteVideo.getVisibility() != View.VISIBLE) {
                         ivRemoteVideo.setVisibility(View.VISIBLE);
@@ -361,6 +426,7 @@ public class CallActivity extends AppCompatActivity implements P2PSocketManager.
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        stopRinging();
         endCall(false);
         if (socketManager != null) {
             socketManager.unregisterListener(this);

@@ -7,36 +7,40 @@ import android.net.wifi.p2p.WifiP2pInfo;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.view.View;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
-import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.meshconnect.offlinechat.adapter.DeviceAdapter;
 import com.meshconnect.offlinechat.db.ChatDatabaseHelper;
 import com.meshconnect.offlinechat.model.DeviceItem;
 import com.meshconnect.offlinechat.wifi.WiFiDirectManager;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Activity for scanning, discovering, and listing nearby peer devices and offline chat contacts
- * powered by WiFiDirectManager and local SQLite persistence.
+ * Activity for discovering nearby Wi-Fi Direct peers and viewing offline saved contacts.
  */
-public class DeviceListActivity extends AppCompatActivity
-        implements DeviceAdapter.OnDeviceClickListener, WiFiDirectManager.WiFiDirectListener {
+public class DeviceListActivity extends AppCompatActivity implements
+        WiFiDirectManager.WiFiDirectListener,
+        DeviceAdapter.OnDeviceClickListener {
 
-    private MaterialToolbar toolbar;
-    private LinearProgressIndicator scanProgressBar;
+    private static final String TAG = "DeviceListActivity";
+
+    private Toolbar toolbar;
+    private ProgressBar scanProgressBar;
     private TextView tvScanningStatus;
     private MaterialButton btnToggleScan;
     private RecyclerView recyclerViewDevices;
@@ -50,6 +54,9 @@ public class DeviceListActivity extends AppCompatActivity
     private boolean isScanning = false;
     private final Handler scanHandler = new Handler(Looper.getMainLooper());
 
+    // Tracks if connection was explicitly initiated so we don't loop redirect on back press
+    private boolean userInitiatedConnect = false;
+
     // Map to keep reference to actual WifiP2pDevice objects by MAC address
     private final Map<String, WifiP2pDevice> p2pDeviceMap = new HashMap<>();
     private DeviceItem connectingDevice = null;
@@ -60,6 +67,8 @@ public class DeviceListActivity extends AppCompatActivity
         setContentView(R.layout.activity_device_list);
 
         dbHelper = ChatDatabaseHelper.getInstance(this);
+        dbHelper.deleteDummyContacts(); // Clean any historical mock devices
+
         wiFiDirectManager = new WiFiDirectManager(this, this);
 
         String mode = getIntent().getStringExtra("MODE");
@@ -143,7 +152,14 @@ public class DeviceListActivity extends AppCompatActivity
 
     private void loadSavedContactsFromDatabase() {
         List<DeviceItem> savedContacts = dbHelper.getAllContacts();
-        deviceAdapter.setDevices(savedContacts);
+        List<DeviceItem> realContacts = new ArrayList<>();
+        for (DeviceItem item : savedContacts) {
+            String name = item.getName() != null ? item.getName() : "";
+            if (!name.contains("Pixel 8") && !name.contains("Samsung")) {
+                realContacts.add(item);
+            }
+        }
+        deviceAdapter.setDevices(realContacts);
         updateEmptyState();
     }
 
@@ -157,39 +173,8 @@ public class DeviceListActivity extends AppCompatActivity
         deviceAdapter.clearDevices();
         p2pDeviceMap.clear();
 
-        // 1. Trigger real Android Wi-Fi Direct peer discovery
+        // Trigger real Android Wi-Fi Direct peer discovery
         wiFiDirectManager.discoverPeers();
-
-        // 2. Mock nodes fallback for emulator / standalone testing
-        scanHandler.postDelayed(() -> {
-            if (!isScanning) return;
-            DeviceItem peer1 = new DeviceItem(
-                    "node-001",
-                    "Pixel 8 Pro (Relay Node)",
-                    "44:2A:60:88:91:02",
-                    DeviceItem.DeviceType.BLUETOOTH_LE,
-                    -48,
-                    true
-            );
-            dbHelper.insertOrUpdateContact(peer1.getName(), peer1.getAddress());
-            deviceAdapter.addDevice(peer1);
-            updateEmptyState();
-        }, 800);
-
-        scanHandler.postDelayed(() -> {
-            if (!isScanning) return;
-            DeviceItem peer2 = new DeviceItem(
-                    "node-002",
-                    "Samsung Galaxy S24 Ultra",
-                    "7A:99:C2:55:10:44",
-                    DeviceItem.DeviceType.WIFI_DIRECT,
-                    -55,
-                    false
-            );
-            dbHelper.insertOrUpdateContact(peer2.getName(), peer2.getAddress());
-            deviceAdapter.addDevice(peer2);
-            updateEmptyState();
-        }, 1600);
 
         // Scan timeout after 12 seconds
         scanHandler.postDelayed(this::stopScanning, 12000);
@@ -249,6 +234,7 @@ public class DeviceListActivity extends AppCompatActivity
 
     @Override
     public void onConnectionInitiated() {
+        userInitiatedConnect = true;
         Toast.makeText(this, "Wi-Fi Direct connection requested...", Toast.LENGTH_SHORT).show();
     }
 
@@ -256,8 +242,14 @@ public class DeviceListActivity extends AppCompatActivity
     public void onConnectionSuccess(WifiP2pInfo info, String groupOwnerAddress, boolean isGroupOwner) {
         Toast.makeText(this, "Wi-Fi Direct connected! Role: " + (isGroupOwner ? "Group Owner" : "Client"), Toast.LENGTH_LONG).show();
 
-        // If this device is Group Owner, groupOwnerAddress is our own IP (192.168.49.1).
-        // Peer IP is unknown until the client registers via handshake.
+        // If connection was already established and the user backed out to DeviceListActivity,
+        // do not auto-redirect them back into the chat screen!
+        if (!userInitiatedConnect) {
+            Log.d(TAG, "Connection already active; suppressing auto-redirect to preserve back navigation.");
+            return;
+        }
+        userInitiatedConnect = false;
+
         String peerIp = isGroupOwner ? null : groupOwnerAddress;
 
         DeviceItem target = connectingDevice != null ? connectingDevice : new DeviceItem(
@@ -274,6 +266,7 @@ public class DeviceListActivity extends AppCompatActivity
 
     @Override
     public void onDisconnected() {
+        userInitiatedConnect = false;
         Toast.makeText(this, "Wi-Fi Direct peer disconnected", Toast.LENGTH_SHORT).show();
     }
 
@@ -284,6 +277,7 @@ public class DeviceListActivity extends AppCompatActivity
 
     @Override
     public void onError(String errorReason) {
+        userInitiatedConnect = false;
         Toast.makeText(this, errorReason, Toast.LENGTH_SHORT).show();
     }
 
@@ -294,6 +288,7 @@ public class DeviceListActivity extends AppCompatActivity
     @Override
     public void onDeviceClick(DeviceItem device) {
         this.connectingDevice = device;
+        this.userInitiatedConnect = true;
         Toast.makeText(this, "Connecting to " + device.getName() + "...", Toast.LENGTH_SHORT).show();
 
         WifiP2pDevice p2pDevice = p2pDeviceMap.get(device.getAddress());
@@ -301,12 +296,13 @@ public class DeviceListActivity extends AppCompatActivity
             // Initiate real Wi-Fi Direct connection
             wiFiDirectManager.connect(p2pDevice);
         } else {
-            // Open direct chat for saved/BLE/mock peers
+            // Open direct chat for saved peers
             openChatScreen(device, "192.168.49.1", false);
         }
     }
 
     private void openChatScreen(DeviceItem device, String peerIpAddress, boolean isGroupOwner) {
+        userInitiatedConnect = false;
         Intent intent = new Intent(DeviceListActivity.this, ChatActivity.class);
         intent.putExtra("EXTRA_PEER_ID", device.getId());
         intent.putExtra("EXTRA_PEER_NAME", device.getName());
@@ -324,4 +320,3 @@ public class DeviceListActivity extends AppCompatActivity
         wiFiDirectManager.stopPeerDiscovery();
     }
 }
-

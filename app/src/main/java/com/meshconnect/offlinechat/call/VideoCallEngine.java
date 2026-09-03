@@ -12,27 +12,28 @@ import android.hardware.Camera;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.util.SparseArray;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
 import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.util.List;
 
 /**
- * Real-time Offline Video Call Engine streaming live camera frames
- * over a dedicated high-speed local P2P socket (port 8890).
+ * High-performance real-time offline Video Call Engine streaming live camera frames
+ * over a peer-to-peer UDP socket (port 8890) with dynamic resolution discovery and MTU chunking.
+ * Symmetrical architecture: both peers send & receive UDP datagrams without NAT/client-server blockers.
  */
 @SuppressWarnings("deprecation")
 public class VideoCallEngine implements Camera.PreviewCallback, SurfaceHolder.Callback {
 
     private static final String TAG = "VideoCallEngine";
     public static final int VIDEO_PORT = 8890;
+    private static final int CHUNK_SIZE = 1200; // Safe chunk size below standard 1500-byte MTU
 
     public interface OnFrameReceivedListener {
         void onRemoteFrame(Bitmap bitmap);
@@ -40,7 +41,6 @@ public class VideoCallEngine implements Camera.PreviewCallback, SurfaceHolder.Ca
 
     private final Context context;
     private final String peerIp;
-    private final boolean isInitiator;
     private final OnFrameReceivedListener frameListener;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -49,20 +49,25 @@ public class VideoCallEngine implements Camera.PreviewCallback, SurfaceHolder.Ca
     private SurfaceTexture dummySurfaceTexture;
     private volatile boolean isRunning = false;
 
-    private ServerSocket serverSocket;
-    private Socket clientSocket;
-    private DataOutputStream outStream;
-    private Thread networkThread;
+    private DatagramSocket udpSocket;
+    private Thread receiveThread;
     private int cameraFacing = Camera.CameraInfo.CAMERA_FACING_FRONT;
 
     private int previewWidth = 640;
     private int previewHeight = 480;
     private long lastFrameSentTime = 0;
+    private int nextFrameId = 0;
 
-    public VideoCallEngine(Context context, String peerIp, boolean isInitiator, OnFrameReceivedListener listener) {
+    // Frame assembly state on receiver side
+    private int currentAssembleFrameId = -1;
+    private int currentTotalChunks = 0;
+    private short currentRotation = 0;
+    private final SparseArray<byte[]> receivedChunks = new SparseArray<>();
+    private int receivedChunkCount = 0;
+
+    public VideoCallEngine(Context context, String peerIp, OnFrameReceivedListener listener) {
         this.context = context.getApplicationContext();
         this.peerIp = peerIp;
-        this.isInitiator = isInitiator;
         this.frameListener = listener;
     }
 
@@ -77,70 +82,112 @@ public class VideoCallEngine implements Camera.PreviewCallback, SurfaceHolder.Ca
         if (isRunning) return;
         isRunning = true;
 
+        initUdpSocket();
         startCamera();
-        startVideoNetwork();
+        startReceiveThread();
     }
 
-    private void startVideoNetwork() {
-        networkThread = new Thread(() -> {
-            try {
-                if (isInitiator) {
-                    Log.d(TAG, "VideoCallEngine initiator connecting to " + peerIp + ":" + VIDEO_PORT);
-                    int retries = 0;
-                    while (isRunning && retries < 25) {
-                        try {
-                            clientSocket = new Socket();
-                            clientSocket.connect(new InetSocketAddress(peerIp, VIDEO_PORT), 3000);
-                            break;
-                        } catch (IOException e) {
-                            retries++;
-                            Thread.sleep(400);
-                        }
-                    }
-                } else {
-                    Log.d(TAG, "VideoCallEngine listening on port " + VIDEO_PORT);
-                    serverSocket = new ServerSocket();
-                    serverSocket.setReuseAddress(true);
-                    serverSocket.bind(new InetSocketAddress(VIDEO_PORT));
-                    clientSocket = serverSocket.accept();
+    private void initUdpSocket() {
+        try {
+            udpSocket = new DatagramSocket(VIDEO_PORT);
+            udpSocket.setReuseAddress(true);
+            udpSocket.setReceiveBufferSize(512 * 1024);
+            udpSocket.setSendBufferSize(512 * 1024);
+            Log.d(TAG, "Video UDP socket bound to port " + VIDEO_PORT);
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to bind video UDP socket on " + VIDEO_PORT, e);
+        }
+    }
+
+    private void startReceiveThread() {
+        receiveThread = new Thread(() -> {
+            byte[] buffer = new byte[2048];
+            DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+
+            while (isRunning && !Thread.currentThread().isInterrupted()) {
+                try {
+                    if (udpSocket == null || udpSocket.isClosed()) break;
+                    udpSocket.receive(packet);
+
+                    int length = packet.getLength();
+                    if (length < 12) continue; // Must contain at least header
+
+                    byte[] data = packet.getData();
+
+                    // Parse header:
+                    // int frameId (4 bytes)
+                    // short chunkIndex (2 bytes)
+                    // short totalChunks (2 bytes)
+                    // short rotationDegrees (2 bytes)
+                    // short chunkLength (2 bytes)
+                    int frameId = ((data[0] & 0xFF) << 24) | ((data[1] & 0xFF) << 16) | ((data[2] & 0xFF) << 8) | (data[3] & 0xFF);
+                    int chunkIndex = ((data[4] & 0xFF) << 8) | (data[5] & 0xFF);
+                    int totalChunks = ((data[6] & 0xFF) << 8) | (data[7] & 0xFF);
+                    short rotationDegrees = (short) (((data[8] & 0xFF) << 8) | (data[9] & 0xFF));
+                    int chunkLength = ((data[10] & 0xFF) << 8) | (data[11] & 0xFF);
+
+                    if (chunkLength <= 0 || chunkLength > (length - 12)) continue;
+
+                    byte[] chunkBytes = new byte[chunkLength];
+                    System.arraycopy(data, 12, chunkBytes, 0, chunkLength);
+
+                    processIncomingChunk(frameId, chunkIndex, totalChunks, rotationDegrees, chunkBytes);
+
+                } catch (IOException e) {
+                    if (isRunning) Log.w(TAG, "Video UDP receive error: " + e.getMessage());
                 }
-
-                if (clientSocket != null && clientSocket.isConnected()) {
-                    Log.d(TAG, "Video socket connection established!");
-                    outStream = new DataOutputStream(clientSocket.getOutputStream());
-                    DataInputStream inStream = new DataInputStream(clientSocket.getInputStream());
-
-                    // Start listening for incoming video frames from peer
-                    while (isRunning && !Thread.currentThread().isInterrupted()) {
-                        int frameLength = inStream.readInt();
-                        if (frameLength > 0 && frameLength < 2000000) { // Safety limit: 2MB
-                            short rotationDegrees = inStream.readShort();
-                            byte[] frameData = new byte[frameLength];
-                            inStream.readFully(frameData);
-
-                            Bitmap rawBitmap = BitmapFactory.decodeByteArray(frameData, 0, frameData.length);
-                            if (rawBitmap != null && frameListener != null) {
-                                Bitmap finalBitmap;
-                                if (rotationDegrees != 0) {
-                                    Matrix matrix = new Matrix();
-                                    matrix.postRotate(rotationDegrees);
-                                    if (rotationDegrees == 270) {
-                                        matrix.postScale(-1, 1); // Mirror front camera naturally
-                                    }
-                                    finalBitmap = Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.getWidth(), rawBitmap.getHeight(), matrix, true);
-                                } else {
-                                    finalBitmap = rawBitmap;
-                                }
-                                mainHandler.post(() -> frameListener.onRemoteFrame(finalBitmap));
-                            }
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                if (isRunning) Log.e(TAG, "Video network engine error", e);
             }
         });
-        networkThread.start();
+        receiveThread.start();
+    }
+
+    private synchronized void processIncomingChunk(int frameId, int chunkIndex, int totalChunks, short rotationDegrees, byte[] chunkBytes) {
+        // Discard older frames if newer frame arrived
+        if (frameId > currentAssembleFrameId) {
+            currentAssembleFrameId = frameId;
+            currentTotalChunks = totalChunks;
+            currentRotation = rotationDegrees;
+            receivedChunks.clear();
+            receivedChunkCount = 0;
+        }
+
+        if (frameId == currentAssembleFrameId && receivedChunks.get(chunkIndex) == null) {
+            receivedChunks.put(chunkIndex, chunkBytes);
+            receivedChunkCount++;
+
+            if (receivedChunkCount == currentTotalChunks) {
+                // All chunks for this frame have arrived! Assemble into single JPEG
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                for (int i = 0; i < currentTotalChunks; i++) {
+                    byte[] part = receivedChunks.get(i);
+                    if (part != null) {
+                        baos.write(part, 0, part.length);
+                    }
+                }
+
+                byte[] fullJpeg = baos.toByteArray();
+                Bitmap rawBitmap = BitmapFactory.decodeByteArray(fullJpeg, 0, fullJpeg.length);
+
+                if (rawBitmap != null && frameListener != null) {
+                    Bitmap finalBitmap;
+                    if (currentRotation != 0) {
+                        Matrix matrix = new Matrix();
+                        matrix.postRotate(currentRotation);
+                        if (currentRotation == 270) {
+                            matrix.postScale(-1, 1); // Mirror front camera naturally
+                        }
+                        finalBitmap = Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.getWidth(), rawBitmap.getHeight(), matrix, true);
+                    } else {
+                        finalBitmap = rawBitmap;
+                    }
+                    mainHandler.post(() -> frameListener.onRemoteFrame(finalBitmap));
+                }
+
+                // Reset for next frame
+                receivedChunks.clear();
+                receivedChunkCount = 0;
+            }
+        }
     }
 
     private void startCamera() {
@@ -166,11 +213,11 @@ public class VideoCallEngine implements Camera.PreviewCallback, SurfaceHolder.Ca
             camera = Camera.open(targetCameraId);
             Camera.Parameters params = camera.getParameters();
 
-            // 1. Dynamic preview size discovery (never hardcode unsupported resolutions)
+            // Dynamic resolution discovery (prevents hardware crash)
             List<Camera.Size> supported = params.getSupportedPreviewSizes();
             Camera.Size chosenSize = null;
             if (supported != null && !supported.isEmpty()) {
-                // Priority 1: 640x480 (standard VGA supported by virtually every Android camera)
+                // Priority 1: 640x480 (standard VGA supported by virtually all devices)
                 for (Camera.Size s : supported) {
                     if (s.width == 640 && s.height == 480) {
                         chosenSize = s;
@@ -209,7 +256,7 @@ public class VideoCallEngine implements Camera.PreviewCallback, SurfaceHolder.Ca
                 previewHeight = 480;
             }
 
-            Log.d(TAG, "Selected camera preview size: " + previewWidth + "x" + previewHeight);
+            Log.d(TAG, "Camera preview configured at " + previewWidth + "x" + previewHeight);
             params.setPreviewSize(previewWidth, previewHeight);
             params.setPreviewFormat(ImageFormat.NV21);
 
@@ -221,8 +268,8 @@ public class VideoCallEngine implements Camera.PreviewCallback, SurfaceHolder.Ca
             camera.setParameters(params);
             camera.setDisplayOrientation(90);
 
-            // 2. Safe Preview Display:
-            // If SurfaceView holder is ready, bind it; otherwise bind a dummy SurfaceTexture so preview starts immediately.
+            // Safe Preview Display:
+            // Bind SurfaceView if valid, otherwise bind headless SurfaceTexture fallback
             boolean boundToSurface = false;
             if (localPreviewSurface != null && localPreviewSurface.getHolder() != null
                     && localPreviewSurface.getHolder().getSurface() != null
@@ -276,9 +323,9 @@ public class VideoCallEngine implements Camera.PreviewCallback, SurfaceHolder.Ca
 
     @Override
     public void onPreviewFrame(byte[] data, Camera camera) {
-        if (!isRunning || outStream == null || data == null) return;
+        if (!isRunning || udpSocket == null || data == null || peerIp == null) return;
 
-        // Throttle to ~18-20 FPS for low battery & network overhead
+        // Throttle to ~18-20 FPS
         long now = System.currentTimeMillis();
         if (now - lastFrameSentTime < 50) return;
         lastFrameSentTime = now;
@@ -286,21 +333,55 @@ public class VideoCallEngine implements Camera.PreviewCallback, SurfaceHolder.Ca
         try {
             YuvImage yuvImage = new YuvImage(data, ImageFormat.NV21, previewWidth, previewHeight, null);
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            yuvImage.compressToJpeg(new Rect(0, 0, previewWidth, previewHeight), 45, baos);
+            yuvImage.compressToJpeg(new Rect(0, 0, previewWidth, previewHeight), 38, baos); // 38% quality for ultra-fast Wi-Fi UDP streaming
             byte[] jpegBytes = baos.toByteArray();
 
+            int frameId = nextFrameId++;
             short rotationDegrees = (short) ((cameraFacing == Camera.CameraInfo.CAMERA_FACING_FRONT) ? 270 : 90);
 
-            synchronized (this) {
-                if (outStream != null) {
-                    outStream.writeInt(jpegBytes.length);
-                    outStream.writeShort(rotationDegrees);
-                    outStream.write(jpegBytes);
-                    outStream.flush();
-                }
+            int totalLength = jpegBytes.length;
+            int totalChunks = (totalLength + CHUNK_SIZE - 1) / CHUNK_SIZE;
+
+            InetAddress peerAddress = InetAddress.getByName(peerIp);
+
+            for (int i = 0; i < totalChunks; i++) {
+                int offset = i * CHUNK_SIZE;
+                int chunkLen = Math.min(CHUNK_SIZE, totalLength - offset);
+
+                // Packet layout: 12-byte header + chunk payload
+                byte[] packetData = new byte[12 + chunkLen];
+
+                // frameId (4 bytes)
+                packetData[0] = (byte) ((frameId >> 24) & 0xFF);
+                packetData[1] = (byte) ((frameId >> 16) & 0xFF);
+                packetData[2] = (byte) ((frameId >> 8) & 0xFF);
+                packetData[3] = (byte) (frameId & 0xFF);
+
+                // chunkIndex (2 bytes)
+                packetData[4] = (byte) ((i >> 8) & 0xFF);
+                packetData[5] = (byte) (i & 0xFF);
+
+                // totalChunks (2 bytes)
+                packetData[6] = (byte) ((totalChunks >> 8) & 0xFF);
+                packetData[7] = (byte) (totalChunks & 0xFF);
+
+                // rotationDegrees (2 bytes)
+                packetData[8] = (byte) ((rotationDegrees >> 8) & 0xFF);
+                packetData[9] = (byte) (rotationDegrees & 0xFF);
+
+                // chunkLen (2 bytes)
+                packetData[10] = (byte) ((chunkLen >> 8) & 0xFF);
+                packetData[11] = (byte) (chunkLen & 0xFF);
+
+                // payload
+                System.arraycopy(jpegBytes, offset, packetData, 12, chunkLen);
+
+                DatagramPacket packet = new DatagramPacket(packetData, packetData.length, peerAddress, VIDEO_PORT);
+                udpSocket.send(packet);
             }
+
         } catch (Exception e) {
-            Log.w(TAG, "Failed sending camera frame", e);
+            Log.w(TAG, "Failed sending video UDP frame", e);
         }
     }
 
@@ -323,7 +404,6 @@ public class VideoCallEngine implements Camera.PreviewCallback, SurfaceHolder.Ca
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
-        // Switch to dummy SurfaceTexture so frame streaming continues without stopping camera
         if (camera != null && isRunning) {
             try {
                 if (dummySurfaceTexture == null) {
@@ -341,21 +421,13 @@ public class VideoCallEngine implements Camera.PreviewCallback, SurfaceHolder.Ca
             try { dummySurfaceTexture.release(); } catch (Exception ignored) {}
             dummySurfaceTexture = null;
         }
-        if (networkThread != null) {
-            networkThread.interrupt();
-            networkThread = null;
+        if (udpSocket != null) {
+            try { udpSocket.close(); } catch (Exception ignored) {}
+            udpSocket = null;
         }
-        if (outStream != null) {
-            try { outStream.close(); } catch (Exception ignored) {}
-            outStream = null;
-        }
-        if (clientSocket != null) {
-            try { clientSocket.close(); } catch (Exception ignored) {}
-            clientSocket = null;
-        }
-        if (serverSocket != null) {
-            try { serverSocket.close(); } catch (Exception ignored) {}
-            serverSocket = null;
+        if (receiveThread != null) {
+            receiveThread.interrupt();
+            receiveThread = null;
         }
         Log.d(TAG, "VideoCallEngine stopped.");
     }
