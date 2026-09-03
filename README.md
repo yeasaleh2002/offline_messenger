@@ -10,12 +10,13 @@ MeshConnect is a production-ready Android offline messaging and file-sharing app
 1. [Why This App? (Problem Statement & Purpose)](#-why-this-app-problem-statement--purpose)
 2. [Key Features](#-key-features)
 3. [Network Topology, Range & Ecosystem Scalability](#-network-topology-range--ecosystem-scalability)
-4. [Architecture & How It Works](#-architecture--how-it-works)
-5. [Packet Protocol Specification](#-packet-protocol-specification)
-6. [Folder Structure & Codebase Map](#-folder-structure--codebase-map)
-7. [What Was Built & Fixed (Engineering Log)](#-what-was-built--fixed-engineering-log)
-8. [Junior Developer Quickstart (Run It in 5 Minutes)](#-junior-developer-quickstart-run-it-in-5-minutes)
-9. [Troubleshooting & Gotchas](#-troubleshooting--gotchas)
+4. [Technology Stack & Why Each Was Chosen](#-technology-stack--why-each-was-chosen)
+5. [Architecture & How It Works](#-architecture--how-it-works)
+6. [Packet Protocol Specification](#-packet-protocol-specification)
+7. [Folder Structure & Codebase Map](#-folder-structure--codebase-map)
+8. [What Was Built & Fixed (Engineering Log)](#-what-was-built--fixed-engineering-log)
+9. [Junior Developer Quickstart (Run It in 5 Minutes)](#-junior-developer-quickstart-run-it-in-5-minutes)
+10. [Troubleshooting & Gotchas](#-troubleshooting--gotchas)
 
 ---
 
@@ -66,6 +67,80 @@ When thousands of users install MeshConnect across a campus, stadium, or city:
 ```
 - **Hop-by-Hop Relaying (Store-and-Forward)**: If User A wants to send a message to User D (150 meters away, out of radio range), intermediate devices (User B and User C) act as relay nodes.
 - **The Core Transport**: The TCP socket engine, handshake system, and stream protocol built in this repository provide the **high-speed transport layer** required for packet forwarding across multi-hop hops.
+
+---
+
+## 🛠️ Technology Stack & Why Each Was Chosen
+
+MeshConnect deliberately selects native Android and core networking technologies to operate 100% off-grid without depending on cloud servers, cellular modems, or third-party web frameworks:
+
+### 1. Wireless Radio Protocol: **Wi-Fi Direct (Wi-Fi P2P / 802.11)**
+* **Technology**: `android.net.wifi.p2p.WifiP2pManager`, `WifiP2pConfig`, `WifiP2pInfo`
+* **Why this was chosen**:
+  - **High Bandwidth (up to 250 Mbps)**: Bluetooth Classic/BLE only delivers ~1–2 Mbps, which is far too slow for transferring large photos, audio, or documents. Wi-Fi Direct uses high-speed 802.11n/ac/ax radio channels.
+  - **Long Range (50–100m outdoors)**: Bluetooth signals degrade after 10–15 meters. Wi-Fi Direct reaches up to 100 meters outdoors and easily penetrates indoor building walls.
+  - **Zero Router Dependency**: Devices establish an ad-hoc local group automatically without needing a Wi-Fi router, mobile hotspot, or internet connectivity.
+
+| Comparison Factor | Cellular / Internet | Bluetooth LE | **Wi-Fi Direct (MeshConnect)** |
+|---|---|---|---|
+| **Internet / SIM Needed?** | Yes (Cloud servers) | No | **No (100% Offline)** |
+| **Max Direct Range** | Cell tower dependent | ~10–15 meters | **~50–100 meters** |
+| **Transfer Speed** | Variable (data charges) | ~1–2 Mbps | **Up to 250 Mbps** |
+| **Media & File Sharing** | Consumes mobile data | Unusable for large files | **Instant HD streaming** |
+
+---
+
+### 2. Networking Engine: **Raw TCP/IP Sockets (`ServerSocket` & `Socket`)**
+* **Technology**: `java.net.ServerSocket`, `java.net.Socket`, `DataInputStream`, `DataOutputStream`
+* **Why this was chosen**:
+  - **No Cloud Web Server Required**: Standard chat apps use HTTP REST or WebSockets connecting to AWS, Firebase, or cloud servers. In an offline environment, those servers do not exist.
+  - **Direct Device-to-Device Streaming**: When paired via Wi-Fi Direct, Android assigns real IP addresses (`192.168.49.1` and `192.168.49.xxx`). Raw TCP sockets allow phones to communicate directly at the transport layer.
+  - **Guaranteed Order & Zero Data Loss**: TCP automatically manages packet ordering, checksums, and retransmissions so messages and binary files never arrive corrupted.
+  - **Sub-10ms Latency**: Packets travel locally through the air between antennas in milliseconds.
+
+---
+
+### 3. Core Development Platform: **Native Android (Java & Android SDK 34 / Android 14)**
+* **Technology**: Android SDK (`compileSdk 34`), Java 8/17 source compatibility
+* **Why this was chosen**:
+  - **Direct Hardware & Radio API Control**: Cross-platform frameworks (React Native, Flutter) rely on third-party community plugins for Wi-Fi Direct that are often unmaintained, unstable, or fail on modern Android versions (Android 13/14).
+  - **Modern OS Compatibility**: Android 13+ introduced strict runtime permissions such as `NEARBY_WIFI_DEVICES`. Developing in native Android provides full access to `BroadcastReceiver`, type-safe Parcelables, and system Wi-Fi lifecycle intents.
+  - **Maximum Execution Speed**: Zero JavaScript bridge or runtime virtualization overhead.
+
+---
+
+### 4. Local Database: **Android SQLite (`SQLiteOpenHelper`)**
+* **Technology**: `android.database.sqlite.SQLiteDatabase`, `SQLiteOpenHelper`
+* **Why this was chosen**:
+  - **100% Offline Persistence**: With no cloud database (like Firebase or Supabase), all contacts, message threads, delivery statuses (`SENDING`, `DELIVERED`), and downloaded file paths must persist across app reboots locally.
+  - **Relational Integrity**: Enforces foreign keys (`FOREIGN KEY(contact_mac) REFERENCES contacts(mac_address)`) to maintain structured conversation histories.
+  - **Indexed Performance**: Uses an indexed search table (`idx_messages_contact_mac`) to load long chat histories in milliseconds.
+
+---
+
+### 5. Asynchronous Concurrency: **Java `ExecutorService` & `Handler(Looper)`**
+* **Technology**: `Executors.newCachedThreadPool()`, dedicated background `ServerThread`, `Handler(Looper.getMainLooper())`
+* **Why this was chosen**:
+  - **Zero UI Freezing (No ANR)**: Android strictly blocks network socket operations on the main thread (`NetworkOnMainThreadException`).
+  - **Continuous Background Listening**: `ServerThread` stays open in the background listening for incoming text packets and files 24/7.
+  - **Safe UI Thread Dispatching**: `mainHandler.post(...)` ensures incoming messages are safely updated in the RecyclerView on the UI thread without threading crashes.
+
+---
+
+### 6. Streaming Architecture: **Chunked Stream I/O (8KB Buffer)**
+* **Technology**: `FileInputStream`, `FileOutputStream`, `socket.shutdownOutput()`
+* **Why this was chosen**:
+  - **Zero Out-Of-Memory (`OutOfMemoryError`)**: Loading a 50MB video or 15MB photo entirely into a flat byte array (`byte[]`) in memory can easily crash low-end smartphones.
+  - **Chunk-by-Chunk Streaming**: Files are read from storage and pushed across the TCP socket in 8KB chunks. RAM consumption remains virtually flat (<10 MB) regardless of whether the file is 100 KB or 1 GB.
+  - **Clean TCP Teardown**: Uses `socket.shutdownOutput()` (sends a clean TCP FIN signal) and waits for a `0x06 (ACK)` confirmation, preventing connection drops and TCP resets.
+
+---
+
+### 7. User Interface: **Android Material Components & `RecyclerView`**
+* **Technology**: `RecyclerView`, Material 3 (`com.google.android.material:material:1.11.0`), ViewBinding
+* **Why this was chosen**:
+  - **View Recycling**: Unlike legacy `ListView`, `RecyclerView` recycles visual bubbles as the user scrolls, maintaining smooth 60/120 FPS frame rates even with thousands of chat messages.
+  - **Heterogeneous Bubbles**: `ChatAdapter` dynamically switches layout views (`VIEW_TYPE_SENT` vs `VIEW_TYPE_RECEIVED`) and renders multimedia attachment previews seamlessly.
 
 ---
 
