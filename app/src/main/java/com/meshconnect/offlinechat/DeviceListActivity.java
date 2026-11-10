@@ -8,12 +8,15 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -54,12 +57,25 @@ public class DeviceListActivity extends AppCompatActivity implements
     private boolean isScanning = false;
     private final Handler scanHandler = new Handler(Looper.getMainLooper());
 
-    // Tracks if connection was explicitly initiated so we don't loop redirect on back press
-    private boolean userInitiatedConnect = false;
+    // Navigation tracking to prevent unwanted back-redirect loops
+    private boolean isOpeningChat = false;
+    private boolean justReturnedFromChat = false;
 
     // Map to keep reference to actual WifiP2pDevice objects by MAC address
     private final Map<String, WifiP2pDevice> p2pDeviceMap = new HashMap<>();
     private DeviceItem connectingDevice = null;
+
+    // Continuous discovery loop while scanning screen is active
+    private final Runnable discoveryLoopRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (isScanning) {
+                Log.d(TAG, "Re-triggering Wi-Fi Direct peer discovery pulse...");
+                wiFiDirectManager.discoverPeers();
+                scanHandler.postDelayed(this, 10000); // Pulse discovery every 10 seconds
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,7 +83,7 @@ public class DeviceListActivity extends AppCompatActivity implements
         setContentView(R.layout.activity_device_list);
 
         dbHelper = ChatDatabaseHelper.getInstance(this);
-        dbHelper.deleteDummyContacts(); // Clean any historical mock devices
+        dbHelper.deleteDummyContacts(); // Clean only exact legacy dummy entries
 
         wiFiDirectManager = new WiFiDirectManager(this, this);
 
@@ -90,17 +106,23 @@ public class DeviceListActivity extends AppCompatActivity implements
     protected void onResume() {
         super.onResume();
         wiFiDirectManager.registerReceiver(this);
+
+        if (isOpeningChat) {
+            isOpeningChat = false;
+            justReturnedFromChat = true;
+        }
+
         if (isHistoryMode) {
             loadSavedContactsFromDatabase();
+        } else if (!isScanning) {
+            startScanning();
         }
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        if (isScanning) {
-            stopScanning();
-        }
+        stopScanning();
         wiFiDirectManager.unregisterReceiver(this);
     }
 
@@ -125,6 +147,27 @@ public class DeviceListActivity extends AppCompatActivity implements
         } else {
             toolbar.setTitle(R.string.device_list_title);
         }
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        if (!isHistoryMode) {
+            menu.add(0, 101, 0, "Reset Wi-Fi Link")
+                .setIcon(R.drawable.ic_radar)
+                .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
+        }
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+        if (item.getItemId() == 101) {
+            Toast.makeText(this, "Resetting Wi-Fi Direct connection...", Toast.LENGTH_SHORT).show();
+            wiFiDirectManager.disconnect();
+            startScanning();
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
     }
 
     private void setupRecyclerView() {
@@ -155,7 +198,7 @@ public class DeviceListActivity extends AppCompatActivity implements
         List<DeviceItem> realContacts = new ArrayList<>();
         for (DeviceItem item : savedContacts) {
             String name = item.getName() != null ? item.getName() : "";
-            if (!name.contains("Pixel 8") && !name.contains("Samsung")) {
+            if (!name.equals("Pixel 8 Pro (Relay Node)") && !name.equals("Samsung Galaxy S24 Ultra")) {
                 realContacts.add(item);
             }
         }
@@ -173,17 +216,19 @@ public class DeviceListActivity extends AppCompatActivity implements
         deviceAdapter.clearDevices();
         p2pDeviceMap.clear();
 
-        // Trigger real Android Wi-Fi Direct peer discovery
+        // 1. Initial peer discovery
         wiFiDirectManager.discoverPeers();
 
-        // Scan timeout after 12 seconds
-        scanHandler.postDelayed(this::stopScanning, 12000);
+        // 2. Start continuous discovery loop so radio stays active
+        scanHandler.removeCallbacks(discoveryLoopRunnable);
+        scanHandler.postDelayed(discoveryLoopRunnable, 10000);
     }
 
     private void stopScanning() {
         isScanning = false;
+        scanHandler.removeCallbacks(discoveryLoopRunnable);
         scanProgressBar.setVisibility(View.INVISIBLE);
-        tvScanningStatus.setText("Scan completed. Found " + deviceAdapter.getItemCount() + " peers.");
+        tvScanningStatus.setText("Scan paused. Found " + deviceAdapter.getItemCount() + " peers.");
         btnToggleScan.setText(R.string.rescan);
         wiFiDirectManager.stopPeerDiscovery();
         updateEmptyState();
@@ -212,6 +257,7 @@ public class DeviceListActivity extends AppCompatActivity implements
 
     @Override
     public void onPeersDiscovered(WifiP2pDeviceList peerList) {
+        Log.d(TAG, "onPeersDiscovered called with " + (peerList != null ? peerList.getDeviceList().size() : 0) + " devices");
         if (peerList != null && !peerList.getDeviceList().isEmpty()) {
             for (WifiP2pDevice device : peerList.getDeviceList()) {
                 p2pDeviceMap.put(device.deviceAddress, device);
@@ -228,56 +274,61 @@ public class DeviceListActivity extends AppCompatActivity implements
                 dbHelper.insertOrUpdateContact(deviceItem.getName(), deviceItem.getAddress());
                 deviceAdapter.addDevice(deviceItem);
             }
+            tvScanningStatus.setText("Found " + deviceAdapter.getItemCount() + " peer(s). Tap to connect.");
             updateEmptyState();
         }
     }
 
     @Override
     public void onConnectionInitiated() {
-        userInitiatedConnect = true;
         Toast.makeText(this, "Wi-Fi Direct connection requested...", Toast.LENGTH_SHORT).show();
     }
 
     @Override
     public void onConnectionSuccess(WifiP2pInfo info, String groupOwnerAddress, boolean isGroupOwner) {
+        Log.d(TAG, "onConnectionSuccess: groupOwner=" + isGroupOwner + ", GO IP=" + groupOwnerAddress);
         Toast.makeText(this, "Wi-Fi Direct connected! Role: " + (isGroupOwner ? "Group Owner" : "Client"), Toast.LENGTH_LONG).show();
-
-        // If connection was already established and the user backed out to DeviceListActivity,
-        // do not auto-redirect them back into the chat screen!
-        if (!userInitiatedConnect) {
-            Log.d(TAG, "Connection already active; suppressing auto-redirect to preserve back navigation.");
-            return;
-        }
-        userInitiatedConnect = false;
 
         String peerIp = isGroupOwner ? null : groupOwnerAddress;
 
         DeviceItem target = connectingDevice != null ? connectingDevice : new DeviceItem(
-                "p2p-node",
-                "Connected Peer",
+                "p2p-connected",
+                "Connected Peer (" + (isGroupOwner ? "Client" : "Group Owner") + ")",
                 groupOwnerAddress != null ? groupOwnerAddress : "192.168.49.1",
                 DeviceItem.DeviceType.WIFI_DIRECT,
                 0,
                 true
         );
 
+        // Always show the connected peer in the list
+        deviceAdapter.addDevice(target);
+        updateEmptyState();
+
+        // If the user just pressed back from ChatActivity, do NOT force them back in!
+        if (justReturnedFromChat) {
+            Log.d(TAG, "Ignoring auto-redirect: user intentionally backed out of chat.");
+            justReturnedFromChat = false;
+            return;
+        }
+
         openChatScreen(target, peerIp, isGroupOwner);
     }
 
     @Override
     public void onDisconnected() {
-        userInitiatedConnect = false;
         Toast.makeText(this, "Wi-Fi Direct peer disconnected", Toast.LENGTH_SHORT).show();
+        connectingDevice = null;
     }
 
     @Override
     public void onThisDeviceChanged(WifiP2pDevice device) {
-        // Local device info updated
+        if (device != null) {
+            Log.d(TAG, "This device Wi-Fi Direct status: " + device.deviceName + " (" + device.deviceAddress + ")");
+        }
     }
 
     @Override
     public void onError(String errorReason) {
-        userInitiatedConnect = false;
         Toast.makeText(this, errorReason, Toast.LENGTH_SHORT).show();
     }
 
@@ -288,7 +339,6 @@ public class DeviceListActivity extends AppCompatActivity implements
     @Override
     public void onDeviceClick(DeviceItem device) {
         this.connectingDevice = device;
-        this.userInitiatedConnect = true;
         Toast.makeText(this, "Connecting to " + device.getName() + "...", Toast.LENGTH_SHORT).show();
 
         WifiP2pDevice p2pDevice = p2pDeviceMap.get(device.getAddress());
@@ -302,7 +352,7 @@ public class DeviceListActivity extends AppCompatActivity implements
     }
 
     private void openChatScreen(DeviceItem device, String peerIpAddress, boolean isGroupOwner) {
-        userInitiatedConnect = false;
+        isOpeningChat = true;
         Intent intent = new Intent(DeviceListActivity.this, ChatActivity.class);
         intent.putExtra("EXTRA_PEER_ID", device.getId());
         intent.putExtra("EXTRA_PEER_NAME", device.getName());

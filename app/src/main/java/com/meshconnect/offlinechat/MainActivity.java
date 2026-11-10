@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -16,7 +17,6 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
 import com.google.android.material.button.MaterialButton;
-import com.google.android.material.card.MaterialCardView;
 import com.meshconnect.offlinechat.db.ChatDatabaseHelper;
 import com.meshconnect.offlinechat.network.P2PSocketManager;
 import com.meshconnect.offlinechat.network.ServerThread;
@@ -31,10 +31,10 @@ import java.util.UUID;
  */
 public class MainActivity extends AppCompatActivity implements P2PSocketManager.SocketEventListener {
 
-    private MaterialCardView cardScanDevices;
-    private MaterialCardView cardChatHistory;
-    private MaterialCardView cardGroupChats;
-    private MaterialCardView cardClearData;
+    private View cardScanDevices;
+    private View cardChatHistory;
+    private View cardGroupChats;
+    private View cardClearData;
     private MaterialButton btnScanDevices;
     private MaterialButton btnChatHistory;
     private MaterialButton btnGroupChats;
@@ -87,7 +87,7 @@ public class MainActivity extends AppCompatActivity implements P2PSocketManager.
     private void setupNodeDiagnostics() {
         // Generate or load a persistent unique local node ID for mesh discovery
         String shortNodeId = UUID.randomUUID().toString().substring(0, 6).toUpperCase();
-        tvMyNodeId.setText(String.format("My Node ID: Mesh-NODE-%s", shortNodeId));
+        tvMyNodeId.setText(String.format("My Device ID: MSG-NODE-%s", shortNodeId));
     }
 
     private void setupPermissionHandler() {

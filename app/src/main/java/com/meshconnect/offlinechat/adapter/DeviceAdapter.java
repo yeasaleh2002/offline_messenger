@@ -42,9 +42,13 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
     }
 
     public void addDevice(DeviceItem device) {
-        if (!deviceList.contains(device)) {
+        int index = deviceList.indexOf(device);
+        if (index == -1) {
             deviceList.add(device);
             notifyItemInserted(deviceList.size() - 1);
+        } else {
+            deviceList.set(index, device);
+            notifyItemChanged(index);
         }
     }
 

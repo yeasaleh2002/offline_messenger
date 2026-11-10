@@ -1,41 +1,49 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Brand / Primary Palette -->
-    <color name="primary">#2563EB</color>
-    <color name="primary_variant">#1D4ED8</color>
-    <color name="primary_light">#DBEAFE</color>
-    <color name="primary_dark">#1E40AF</color>
-    
-    <!-- Secondary / Accent -->
-    <color name="secondary">#0D9488</color>
-    <color name="secondary_light">#CCFBF1</color>
-    <color name="secondary_dark">#0F766E</color>
+    <!-- WhatsApp-style Color Palette for Offline Messenger -->
+
+    <!-- Primary Green (WhatsApp brand) -->
+    <color name="primary">#25D366</color>
+    <color name="primary_variant">#128C7E</color>
+    <color name="primary_light">#DCF8C6</color>
+    <color name="primary_dark">#075E54</color>
+
+    <!-- Secondary / Accent (Teal) -->
+    <color name="secondary">#128C7E</color>
+    <color name="secondary_light">#E8F5E9</color>
+    <color name="secondary_dark">#075E54</color>
 
     <!-- Backgrounds & Surfaces -->
-    <color name="background">#F8FAFC</color>
+    <color name="background">#ECE5DD</color>
     <color name="surface">#FFFFFF</color>
-    <color name="surface_variant">#F1F5F9</color>
-    
+    <color name="surface_variant">#F0F0F0</color>
+
     <!-- Text Colors -->
-    <color name="text_primary">#0F172A</color>
-    <color name="text_secondary">#64748B</color>
-    <color name="text_muted">#94A3B8</color>
+    <color name="text_primary">#111B21</color>
+    <color name="text_secondary">#667781</color>
+    <color name="text_muted">#8696A0</color>
     <color name="text_on_primary">#FFFFFF</color>
 
     <!-- Status & Badges -->
-    <color name="status_online">#10B981</color>
-    <color name="status_connecting">#F59E0B</color>
-    <color name="status_offline">#94A3B8</color>
+    <color name="status_online">#25D366</color>
+    <color name="status_connecting">#FFA000</color>
+    <color name="status_offline">#8696A0</color>
 
-    <!-- Chat Bubbles -->
-    <color name="chat_bubble_sent">#2563EB</color>
-    <color name="chat_bubble_received">#E2E8F0</color>
-    <color name="chat_text_sent">#FFFFFF</color>
-    <color name="chat_text_received">#0F172A</color>
-    <color name="chat_time_sent">#BFDBFE</color>
-    <color name="chat_time_received">#64748B</color>
+    <!-- Chat Bubbles (WhatsApp style) -->
+    <color name="chat_bubble_sent">#DCF8C6</color>
+    <color name="chat_bubble_received">#FFFFFF</color>
+    <color name="chat_text_sent">#111B21</color>
+    <color name="chat_text_received">#111B21</color>
+    <color name="chat_time_sent">#667781</color>
+    <color name="chat_time_received">#667781</color>
 
     <!-- Borders & Dividers -->
-    <color name="divider">#E2E8F0</color>
-    <color name="card_stroke">#CBD5E1</color>
+    <color name="divider">#E9EDEF</color>
+    <color name="card_stroke">#D1D7DB</color>
+
+    <!-- Toolbar / AppBar -->
+    <color name="toolbar_bg">#075E54</color>
+    <color name="toolbar_text">#FFFFFF</color>
+    <color name="toolbar_icon">#FFFFFF</color>
+    <color name="toolbar_subtitle">#B2DFDB</color>
 </resources>

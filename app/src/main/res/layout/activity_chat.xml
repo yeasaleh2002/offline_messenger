@@ -6,19 +6,19 @@
     android:layout_height="match_parent"
     android:background="@color/background">
 
-    <!-- Chat Header Toolbar -->
+    <!-- WhatsApp-style Chat Header -->
     <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/surface"
-        app:elevation="2dp">
+        android:background="@color/toolbar_bg"
+        app:elevation="4dp">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingHorizontal="8dp">
+            android:paddingHorizontal="4dp">
 
             <ImageButton
                 android:id="@+id/btnBack"
@@ -27,12 +27,28 @@
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Back"
                 android:src="@drawable/ic_arrow_back"
-                app:tint="@color/text_primary" />
+                app:tint="@color/toolbar_icon" />
+
+            <!-- Avatar circle -->
+            <FrameLayout
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_marginStart="2dp"
+                android:background="@drawable/bg_avatar_circle"
+                android:backgroundTint="@color/primary">
+
+                <ImageView
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_devices"
+                    app:tint="#FFFFFF" />
+            </FrameLayout>
 
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="10dp"
                 android:layout_weight="1"
                 android:orientation="vertical">
 
@@ -41,11 +57,11 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:ellipsize="end"
-                    android:fontFamily="sans-serif-bold"
+                    android:fontFamily="sans-serif-medium"
                     android:maxLines="1"
-                    android:textColor="@color/text_primary"
+                    android:textColor="@color/toolbar_text"
                     android:textSize="16sp"
-                    tools:text="Nearby Peer (Pixel 8 Pro)" />
+                    tools:text="Nearby Device" />
 
                 <LinearLayout
                     android:layout_width="wrap_content"
@@ -57,56 +73,53 @@
                         android:id="@+id/viewConnectionIndicator"
                         android:layout_width="6dp"
                         android:layout_height="6dp"
-                        android:background="@drawable/bg_input_field"
+                        android:background="@drawable/bg_avatar_circle"
                         android:backgroundTint="@color/status_online" />
 
                     <TextView
                         android:id="@+id/tvPeerStatus"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="6dp"
+                        android:layout_marginStart="5dp"
                         android:text="@string/chat_status_connected"
-                        android:textColor="@color/secondary_dark"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
+                        android:textColor="@color/toolbar_subtitle"
+                        android:textSize="12sp" />
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- Offline Audio Call Button -->
+            <!-- Audio Call Button -->
             <ImageButton
                 android:id="@+id/btnAudioCall"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Audio Call"
                 android:src="@drawable/ic_call_24"
-                app:tint="@color/text_primary" />
+                app:tint="@color/toolbar_icon" />
 
-            <!-- Offline Video Call Button -->
+            <!-- Video Call Button -->
             <ImageButton
                 android:id="@+id/btnVideoCall"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:layout_marginStart="4dp"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Video Call"
                 android:src="@drawable/ic_videocam_24"
-                app:tint="@color/text_primary" />
+                app:tint="@color/toolbar_icon" />
 
         </LinearLayout>
 
-        <!-- P2P Info Strip -->
+        <!-- Encrypted notice strip -->
         <TextView
             android:id="@+id/tvP2pNotice"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@color/secondary_light"
+            android:background="#E9EDEF"
             android:gravity="center"
-            android:paddingVertical="4dp"
+            android:paddingVertical="5dp"
             android:text="@string/secure_p2p_notice"
-            android:textColor="@color/secondary_dark"
-            android:textSize="11sp"
-            android:textStyle="bold" />
+            android:textColor="@color/text_secondary"
+            android:textSize="11sp" />
 
     </com.google.android.material.appbar.AppBarLayout>
 
@@ -121,30 +134,31 @@
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:clipToPadding="false"
+            android:paddingHorizontal="6dp"
             android:paddingTop="8dp"
             android:paddingBottom="8dp"
             app:layout_constraintBottom_toTopOf="@id/layoutBottomInput"
             app:layout_constraintTop_toTopOf="parent"
             tools:listitem="@layout/item_message_sent" />
 
-        <!-- Bottom Chat Input Bar -->
+        <!-- Bottom Chat Input Bar (WhatsApp style) -->
         <LinearLayout
             android:id="@+id/layoutBottomInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="@color/surface"
-            android:elevation="6dp"
+            android:elevation="4dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingHorizontal="10dp"
-            android:paddingVertical="8dp"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="6dp"
             app:layout_constraintBottom_toBottomOf="parent">
 
             <ImageButton
                 android:id="@+id/btnAttachFile"
-                android:layout_width="42dp"
-                android:layout_height="42dp"
-                android:layout_marginEnd="6dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginEnd="4dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Attach File"
                 android:src="@drawable/ic_attach"
@@ -164,32 +178,32 @@
                 android:paddingVertical="10dp"
                 android:textColor="@color/text_primary"
                 android:textColorHint="@color/text_muted"
-                android:textSize="14sp" />
+                android:textSize="15sp" />
 
-            <!-- Voice Message Record Button -->
+            <!-- Voice Record Button -->
             <com.google.android.material.floatingactionbutton.FloatingActionButton
                 android:id="@+id/btnRecordVoice"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="6dp"
                 android:contentDescription="Record Voice Message"
                 android:src="@drawable/ic_mic_24"
-                app:backgroundTint="@color/secondary_dark"
+                app:backgroundTint="@color/primary"
                 app:elevation="2dp"
-                app:fabCustomSize="44dp"
+                app:fabCustomSize="46dp"
                 app:tint="#FFFFFF" />
 
-            <!-- Send Text Button -->
+            <!-- Send Button -->
             <com.google.android.material.floatingactionbutton.FloatingActionButton
                 android:id="@+id/btnSendMessage"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="6dp"
                 android:contentDescription="@string/btn_send"
                 android:src="@drawable/ic_send"
                 app:backgroundTint="@color/primary"
                 app:elevation="2dp"
-                app:fabCustomSize="44dp"
+                app:fabCustomSize="46dp"
                 app:tint="@color/text_on_primary" />
 
         </LinearLayout>

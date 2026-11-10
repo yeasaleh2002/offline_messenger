@@ -9,8 +9,8 @@
     <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/surface"
-        app:elevation="2dp">
+        android:background="@color/toolbar_bg"
+        app:elevation="4dp">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -26,7 +26,7 @@
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Back"
                 android:src="@drawable/ic_arrow_back"
-                app:tint="@color/text_primary" />
+                app:tint="@color/toolbar_icon" />
 
             <LinearLayout
                 android:layout_width="wrap_content"
@@ -37,16 +37,16 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:fontFamily="sans-serif-black"
+                    android:fontFamily="sans-serif-medium"
                     android:text="Offline Groups"
-                    android:textColor="@color/text_primary"
+                    android:textColor="@color/toolbar_text"
                     android:textSize="18sp" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Multi-peer offline discussions"
-                    android:textColor="@color/text_secondary"
+                    android:textColor="@color/toolbar_subtitle"
                     android:textSize="12sp" />
             </LinearLayout>
         </LinearLayout>
@@ -117,5 +117,4 @@
         android:textColor="#FFFFFF"
         app:icon="@drawable/ic_chat"
         app:iconTint="#FFFFFF" />
-
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

@@ -10,15 +10,15 @@
     <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/surface"
-        app:elevation="2dp">
+        android:background="@color/toolbar_bg"
+        app:elevation="4dp">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingHorizontal="8dp">
+            android:paddingHorizontal="4dp">
 
             <ImageButton
                 android:id="@+id/btnBack"
@@ -27,12 +27,12 @@
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Back"
                 android:src="@drawable/ic_arrow_back"
-                app:tint="@color/text_primary" />
+                app:tint="@color/toolbar_icon" />
 
             <FrameLayout
                 android:layout_width="38dp"
                 android:layout_height="38dp"
-                android:layout_marginStart="4dp"
+                android:layout_marginStart="2dp"
                 android:background="@drawable/bg_avatar_circle"
                 android:backgroundTint="@color/primary">
 
@@ -59,9 +59,9 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:ellipsize="end"
-                    android:fontFamily="sans-serif-bold"
+                    android:fontFamily="sans-serif-medium"
                     android:maxLines="1"
-                    android:textColor="@color/text_primary"
+                    android:textColor="@color/toolbar_text"
                     android:textSize="16sp"
                     tools:text="Emergency Response Team" />
 
@@ -69,25 +69,23 @@
                     android:id="@+id/tvGroupStatus"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Offline Mesh Group • All Connected Nodes"
-                    android:textColor="@color/secondary_dark"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
+                    android:text="Offline Group • All Connected Nodes"
+                    android:textColor="@color/toolbar_subtitle"
+                    android:textSize="12sp" />
             </LinearLayout>
 
         </LinearLayout>
 
-        <!-- P2P Info Strip -->
+        <!-- Encrypted notice strip -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@color/secondary_light"
+            android:background="#E9EDEF"
             android:gravity="center"
-            android:paddingVertical="4dp"
-            android:text="📡 Offline Group Discussion • Messages fan out to all nearby peers"
-            android:textColor="@color/secondary_dark"
-            android:textSize="11sp"
-            android:textStyle="bold" />
+            android:paddingVertical="5dp"
+            android:text="📡 Offline Group • Messages fan out to all nearby peers"
+            android:textColor="@color/text_secondary"
+            android:textSize="11sp" />
 
     </com.google.android.material.appbar.AppBarLayout>
 

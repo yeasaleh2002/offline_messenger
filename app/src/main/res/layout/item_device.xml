@@ -1,81 +1,75 @@
 <?xml version="1.0" encoding="utf-8"?>
-<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/cardDevice"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginHorizontal="16dp"
-    android:layout_marginVertical="6dp"
+    android:background="?attr/selectableItemBackground"
     android:clickable="true"
     android:focusable="true"
-    app:cardBackgroundColor="@color/surface"
-    app:cardCornerRadius="14dp"
-    app:cardElevation="1dp"
-    app:rippleColor="@color/primary_light"
-    app:strokeColor="@color/divider"
-    app:strokeWidth="1dp">
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingHorizontal="16dp"
+    android:paddingVertical="10dp">
 
+    <!-- Avatar circle -->
+    <FrameLayout
+        android:id="@+id/iconContainer"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:background="@drawable/bg_avatar_circle"
+        android:backgroundTint="@color/primary">
+
+        <ImageView
+            android:id="@+id/ivDeviceIcon"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:layout_gravity="center"
+            android:contentDescription="Device Icon"
+            android:src="@drawable/ic_devices"
+            app:tint="#FFFFFF" />
+    </FrameLayout>
+
+    <!-- Device info -->
     <LinearLayout
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:padding="16dp">
+        android:layout_marginStart="14dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
 
-        <FrameLayout
-            android:id="@+id/iconContainer"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:background="@drawable/bg_input_field"
-            android:backgroundTint="@color/primary_light">
-
-            <ImageView
-                android:id="@+id/ivDeviceIcon"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:layout_gravity="center"
-                android:contentDescription="Device Icon"
-                android:src="@drawable/ic_bluetooth"
-                app:tint="@color/primary" />
-        </FrameLayout>
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="14dp"
-            android:layout_weight="1"
-            android:orientation="vertical">
-
-            <TextView
-                android:id="@+id/tvDeviceName"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="sans-serif-bold"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp"
-                tools:text="Pixel 8 Pro (Mesh-Node)" />
-
-            <TextView
-                android:id="@+id/tvDeviceAddress"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:fontFamily="monospace"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                tools:text="AA:BB:CC:11:22:33 • -58 dBm" />
-        </LinearLayout>
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnConnect"
-            style="@style/Widget.Material3.Button.TonalButton"
+        <TextView
+            android:id="@+id/tvDeviceName"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:minHeight="40dp"
-            android:text="@string/action_connect"
-            android:textSize="12sp"
-            app:cornerRadius="10dp" />
+            android:fontFamily="sans-serif-medium"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp"
+            tools:text="Pixel 8 Pro" />
+
+        <TextView
+            android:id="@+id/tvDeviceAddress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            tools:text="AA:BB:CC:11:22:33 • Bluetooth" />
     </LinearLayout>
 
-</com.google.android.material.card.MaterialCardView>
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnConnect"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minHeight="36dp"
+        android:text="@string/action_connect"
+        android:textSize="12sp"
+        app:backgroundTint="@color/primary_light"
+        app:cornerRadius="20dp"
+        app:strokeWidth="0dp" />
+
+</LinearLayout>

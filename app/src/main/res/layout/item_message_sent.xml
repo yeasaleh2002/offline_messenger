@@ -28,7 +28,7 @@
             android:layout_height="wrap_content"
             android:layout_marginBottom="6dp"
             android:background="@drawable/bg_input_field"
-            android:backgroundTint="#1D4ED8"
+            android:backgroundTint="#A8D5A2"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingHorizontal="10dp"

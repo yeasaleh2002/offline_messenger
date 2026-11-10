@@ -280,7 +280,7 @@ public class ChatDatabaseHelper extends SQLiteOpenHelper {
             deleteContact("44:2A:60:88:91:02");
             deleteContact("7A:99:C2:55:10:44");
             SQLiteDatabase db = this.getWritableDatabase();
-            db.delete(TABLE_CONTACTS, COLUMN_DEVICE_NAME + " LIKE '%Pixel 8%' OR " + COLUMN_DEVICE_NAME + " LIKE '%Samsung%'", null);
+            db.delete(TABLE_CONTACTS, COLUMN_DEVICE_NAME + " = 'Pixel 8 Pro (Relay Node)' OR " + COLUMN_DEVICE_NAME + " = 'Samsung Galaxy S24 Ultra'", null);
         } catch (Exception e) {
             Log.w(TAG, "Error cleaning dummy contacts", e);
         }

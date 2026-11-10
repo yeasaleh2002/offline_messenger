@@ -9,17 +9,17 @@
     <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/surface"
-        app:elevation="1dp">
+        android:background="@color/toolbar_bg"
+        app:elevation="4dp">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             app:navigationIcon="@drawable/ic_arrow_back"
-            app:navigationIconTint="@color/text_primary"
+            app:navigationIconTint="@color/toolbar_icon"
             app:title="@string/device_list_title"
-            app:titleTextColor="@color/text_primary" />
+            app:titleTextColor="@color/toolbar_text" />
 
         <com.google.android.material.progressindicator.LinearProgressIndicator
             android:id="@+id/scanProgressBar"
