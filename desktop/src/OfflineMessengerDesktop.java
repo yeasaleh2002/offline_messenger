@@ -59,6 +59,7 @@ public class OfflineMessengerDesktop extends JFrame {
     private DefaultTableModel modelDbLogs;
     private JTextArea txtSocketLogs;
     private JLabel lblDbStatus;
+    private JTabbedPane tabbedPane;
 
     // Socket server thread
     private ServerSocket serverSocket;
@@ -262,7 +263,7 @@ public class OfflineMessengerDesktop extends JFrame {
         headerPanel.add(lblStatus, BorderLayout.EAST);
 
         // Main Tabbed Pane
-        JTabbedPane tabbedPane = new JTabbedPane();
+        tabbedPane = new JTabbedPane();
         tabbedPane.setFont(new Font("Segoe UI", Font.BOLD, 13));
 
         // Tab 1: Live Chat & Sockets
@@ -416,6 +417,29 @@ public class OfflineMessengerDesktop extends JFrame {
         tableDbLogs.getColumnModel().getColumn(5).setPreferredWidth(100);
         tableDbLogs.getColumnModel().getColumn(5).setCellRenderer(centerRenderer);
 
+        // Click any row to automatically set target IP to reply
+        tableDbLogs.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent evt) {
+                int row = tableDbLogs.getSelectedRow();
+                if (row >= 0) {
+                    String sender = String.valueOf(modelDbLogs.getValueAt(row, 1));
+                    String recipient = String.valueOf(modelDbLogs.getValueAt(row, 2));
+                    String ipToUse = recipient;
+                    if (sender.contains("(") && sender.contains(")")) {
+                        ipToUse = sender.substring(sender.indexOf('(') + 1, sender.indexOf(')'));
+                    }
+                    if (!ipToUse.isEmpty() && !ipToUse.toLowerCase().contains("desktop")) {
+                        txtTargetIp.setText(ipToUse);
+                        if (evt.getClickCount() == 2) {
+                            tabbedPane.setSelectedIndex(0); // Jump directly to Live Chat tab
+                            txtMessageInput.requestFocusInWindow();
+                        }
+                    }
+                }
+            }
+        });
+
         JScrollPane scrollTable = new JScrollPane(tableDbLogs);
         scrollTable.setBorder(new LineBorder(new Color(203, 213, 225), 1));
 
@@ -503,7 +527,10 @@ public class OfflineMessengerDesktop extends JFrame {
                 // Save to DB via Pure JDBC
                 saveMessageViaJdbc("Android Peer (" + clientIp + ")", "Desktop Station", messageText, timestamp, "DELIVERED");
 
-                // Update UI
+                // Update UI & Auto-populate Target IP for instant 1-click Reply
+                SwingUtilities.invokeLater(() -> {
+                    txtTargetIp.setText(clientIp);
+                });
                 appendChatMessage("Android Peer (" + clientIp + ")", messageText, timestamp, false);
                 refreshDbTableFromJdbc();
 
