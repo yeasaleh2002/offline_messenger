@@ -72,9 +72,18 @@ public class WiFiDirectManager {
     public void registerReceiver(Context activityContext) {
         if (!isReceiverRegistered && manager != null && channel != null) {
             receiver = new WiFiDirectBroadcastReceiver(manager, channel, listener);
-            activityContext.registerReceiver(receiver, intentFilter);
-            isReceiverRegistered = true;
-            Log.d(TAG, "WiFiDirectBroadcastReceiver registered.");
+            try {
+                androidx.core.content.ContextCompat.registerReceiver(
+                        activityContext,
+                        receiver,
+                        intentFilter,
+                        androidx.core.content.ContextCompat.RECEIVER_EXPORTED
+                );
+                isReceiverRegistered = true;
+                Log.d(TAG, "WiFiDirectBroadcastReceiver registered.");
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to register WiFiDirectBroadcastReceiver", e);
+            }
         }
     }
 
@@ -86,10 +95,12 @@ public class WiFiDirectManager {
         if (isReceiverRegistered && receiver != null) {
             try {
                 activityContext.unregisterReceiver(receiver);
-                isReceiverRegistered = false;
                 Log.d(TAG, "WiFiDirectBroadcastReceiver unregistered.");
-            } catch (IllegalArgumentException e) {
-                Log.w(TAG, "Receiver was already unregistered.", e);
+            } catch (Exception e) {
+                Log.w(TAG, "Receiver was already unregistered or error", e);
+            } finally {
+                isReceiverRegistered = false;
+                receiver = null;
             }
         }
     }

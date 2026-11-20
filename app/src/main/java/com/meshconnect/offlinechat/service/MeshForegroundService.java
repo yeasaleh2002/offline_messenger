@@ -111,7 +111,7 @@ public class MeshForegroundService extends Service implements P2PSocketManager.S
         );
 
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ACTIVE_ID)
-                .setContentTitle("MeshConnect Offline Link Active")
+                .setContentTitle("Offline Messenger Link Active")
                 .setContentText("Listening for direct peer calls & messages...")
                 .setSmallIcon(R.drawable.ic_call_24)
                 .setContentIntent(pendingIntent)
@@ -120,10 +120,39 @@ public class MeshForegroundService extends Service implements P2PSocketManager.S
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
                 .build();
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_SERVICE_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
-        } else {
-            startForeground(NOTIFICATION_SERVICE_ID, notification);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) { // Android 14+
+                // Check if runtime permissions for connectedDevice are granted
+                boolean hasConnectedDevicePerms =
+                        (checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+                        || (checkSelfPermission(android.Manifest.permission.NEARBY_WIFI_DEVICES) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+                        || (checkSelfPermission(android.Manifest.permission.BLUETOOTH_SCAN) == android.content.pm.PackageManager.PERMISSION_GRANTED);
+
+                if (hasConnectedDevicePerms) {
+                    startForeground(NOTIFICATION_SERVICE_ID, notification,
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE | ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+                } else {
+                    // Safe fallback: dataSync requires NO runtime permissions, preventing SecurityException crash!
+                    startForeground(NOTIFICATION_SERVICE_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_SERVICE_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
+            } else {
+                startForeground(NOTIFICATION_SERVICE_ID, notification);
+            }
+        } catch (SecurityException se) {
+            Log.e(TAG, "SecurityException in startForeground, falling back to dataSync", se);
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(NOTIFICATION_SERVICE_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+                } else {
+                    startForeground(NOTIFICATION_SERVICE_ID, notification);
+                }
+            } catch (Exception ex) {
+                Log.e(TAG, "Fallback startForeground failed", ex);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to start foreground notification", e);
         }
     }
 

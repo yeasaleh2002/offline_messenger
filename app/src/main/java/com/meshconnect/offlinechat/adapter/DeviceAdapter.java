@@ -10,7 +10,6 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.button.MaterialButton;
-import com.google.android.material.card.MaterialCardView;
 import com.meshconnect.offlinechat.R;
 import com.meshconnect.offlinechat.model.DeviceItem;
 
@@ -79,7 +78,7 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
 
     static class DeviceViewHolder extends RecyclerView.ViewHolder {
 
-        private final MaterialCardView cardDevice;
+        private final View cardDevice;
         private final TextView tvDeviceName;
         private final TextView tvDeviceAddress;
         private final ImageView ivDeviceIcon;

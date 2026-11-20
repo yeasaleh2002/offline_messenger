@@ -58,16 +58,24 @@ public class MainActivity extends AppCompatActivity implements P2PSocketManager.
     }
 
     private void initP2PSocketService() {
-        P2PSocketManager socketManager = P2PSocketManager.getInstance(this);
-        socketManager.registerListener(this);
-        socketManager.startServer();
+        try {
+            P2PSocketManager socketManager = P2PSocketManager.getInstance(this);
+            socketManager.registerListener(this);
+            socketManager.startServer();
+        } catch (Exception e) {
+            Log.e("MainActivity", "Failed to start socket manager", e);
+        }
 
-        // Start background service to maintain socket and wake screen for incoming calls
+        // Start background service safely
+        startMeshServiceSafely();
+    }
+
+    private void startMeshServiceSafely() {
         try {
             Intent serviceIntent = new Intent(this, com.meshconnect.offlinechat.service.MeshForegroundService.class);
             androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent);
         } catch (Exception e) {
-            Log.e("MainActivity", "Failed to start MeshForegroundService", e);
+            Log.e("MainActivity", "Failed to start MeshForegroundService safely", e);
         }
     }
 
@@ -90,6 +98,13 @@ public class MainActivity extends AppCompatActivity implements P2PSocketManager.
         tvMyNodeId.setText(String.format("My Device ID: MSG-NODE-%s", shortNodeId));
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Check if permissions are granted and ensure service is active
+        startMeshServiceSafely();
+    }
+
     private void setupPermissionHandler() {
         permissionLauncher = registerForActivityResult(
                 new ActivityResultContracts.RequestMultiplePermissions(),
@@ -104,7 +119,8 @@ public class MainActivity extends AppCompatActivity implements P2PSocketManager.
 
                     if (allGranted) {
                         tvMeshStatus.setText(R.string.status_mesh_ready);
-                        Toast.makeText(this, "P2P Mesh Permissions Granted", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "Permissions Granted", Toast.LENGTH_SHORT).show();
+                        startMeshServiceSafely();
                     } else {
                         tvMeshStatus.setText("Mesh Engine: Permissions Needed");
                         Toast.makeText(this, R.string.permission_rationale, Toast.LENGTH_LONG).show();
@@ -147,6 +163,24 @@ public class MainActivity extends AppCompatActivity implements P2PSocketManager.
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                     != PackageManager.PERMISSION_GRANTED) {
                 permissionsNeeded.add(Manifest.permission.POST_NOTIFICATIONS);
+            }
+        }
+
+        // Audio & Camera permissions for voice notes & calling
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            permissionsNeeded.add(Manifest.permission.RECORD_AUDIO);
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+                != PackageManager.PERMISSION_GRANTED) {
+            permissionsNeeded.add(Manifest.permission.CAMERA);
+        }
+
+        // Android 9 and lower (Android 7, 8, 9) Storage permissions for file sharing & voice notes
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    != PackageManager.PERMISSION_GRANTED) {
+                permissionsNeeded.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
             }
         }
 
